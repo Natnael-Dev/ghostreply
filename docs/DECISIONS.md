@@ -1,7 +1,7 @@
 # Architecture Decision Records (ADRs)
 
 **Project:** ghostreply  
-**Status:** DRAFT (Phase 1 Spec Gate C)
+**Status:** DRAFT (Phase 1 Spec Gate C - Revised)
 
 ---
 
@@ -9,13 +9,13 @@
 
 - [ADR-001: Telethon over Pyrogram and TDLib](#adr-001-telethon-over-pyrogram-and-tdlib)
 - [ADR-002: Userbot and Supervised Approval Bot Topology](#adr-002-userbot-and-supervised-approval-bot-topology)
-- [ADR-003: Single Process Application Topology](#adr-003-single-process-application-topology)
+- [ADR-003: Single Python Backend Process Topology](#adr-003-single-python-backend-process-topology)
 - [ADR-004: Hold-Only Verifier and Pure Conjunction Invariant](#adr-004-hold-only-verifier-and-pure-conjunction-invariant)
-- [ADR-005: Language Policy and Amharic Staging](#adr-005-language-policy-and-amharic-staging)
+- [ADR-005: Language Policy and Amharic Staging Gate](#adr-005-language-policy-and-amharic-staging-gate)
 - [ADR-006: Text-Only Outbound Modality](#adr-006-text-only-outbound-modality)
-- [ADR-007: Repository Open-Source License (MIT)](#adr-007-repository-open-source-license-mit)
+- [ADR-007: Repository Open-Source License Choice](#adr-007-repository-open-source-license-choice)
 - [ADR-008: Lean Operational Hardware Profile (2 vCPU / 4 GB VPS)](#adr-008-lean-operational-hardware-profile-2-vcpu--4-gb-vps)
-- [ADR-009: Local-Only Unlock and At-Rest Session Encryption](#adr-009-local-only-unlock-and-at-rest-session-encryption)
+- [ADR-009: Local-Only Unlock and In-Memory StringSession](#adr-009-local-only-unlock-and-in-memory-stringsession)
 - [ADR-010: Baseline History Import Choice](#adr-010-baseline-history-import-choice)
 
 ---
@@ -26,13 +26,13 @@
 - **Reversibility:** 2-way door (adapter-isolated)
 - **Options Considered:**
   1. *Telethon* (Pure Python MTProto client, active maintenance, MIT).
-  2. *Pyrogram* (Inactive since 2023, fork fragmentation, GPLv3).
-  3. *Pyrofork* (Archived 2026, uncertain long-term maintenance).
-  4. *TDLib via python-telegram / ctypes* (Heavy C++ binaries, compilation overhead, operational complexity).
+  2. *Pyrogram* (Main project unmaintained since 2023, LGPLv3 [VERIFIED via PyPI metadata]).
+  3. *Pyrofork* (Community fork reported archived in 2026 [CLAIMED]).
+  4. *TDLib via python-telegram / ctypes* (C++ compilation overhead, heavier operational dependencies).
 - **Decision & Rationale:**
-  Adopt `telethon` (pinned to `1.45.0`, verified from PyPI). Telethon is pure Python, natively supports async/await, runs directly within our single-process asyncio loop without C++ toolchains, and is licensed under permissive MIT.
+  Adopt `telethon` (pinned to `1.45.0` [VERIFIED via `pip index versions telethon` on 2026-10-07]). Telethon is pure Python, natively asynchronous, licensed under permissive MIT, and eliminates binary compilation requirements.
 - **Trade-offs:**
-  Telethon v1 API is mature but lacks some v2 features. However, for 1-on-1 private messaging and bot polling, v1.45.0 provides maximum stability.
+  Telethon v1 API is mature and battle-tested for 1-on-1 private messaging. Potential future v2 migration path is currently unassessed [CLAIMED/UNKNOWN].
 
 ---
 
@@ -43,25 +43,25 @@
 - **Options Considered:**
   1. *Userbot only*: Owner interacts with saved messages or a self-chat for approvals.
   2. *Official Bot only*: Cannot read or send direct messages on personal Telegram account.
-  3. *Hybrid Topology*: Telethon MTProto userbot monitors personal account; dedicated Official Bot (@ApprovalBot) manages owner approvals via inline buttons.
+  3. *Hybrid Topology*: Telethon MTProto userbot monitors personal account; dedicated Official Bot (`TELEGRAM_APPROVAL_BOT_USERNAME`) manages owner approvals via inline buttons.
 - **Decision & Rationale:**
-  Adopt Option 3 (Hybrid). An official Bot API instance provides native inline keyboard UI (`[Approve]`, `[Edit]`, `[Reject]`) with interactive callback queries, while the MTProto userbot handles personal message intake and dispatch.
+  Adopt Option 3 (Hybrid). The official Bot API instance provides an intuitive inline keyboard UI (`[Approve]`, `[Edit]`, `[Reject]`) with interactive callback queries, while the MTProto userbot handles personal message intake and dispatch.
 - **Trade-offs:**
-  Requires managing two Telegram credentials (`api_id`/`api_hash` for userbot and `bot_token` for approval bot). Mitigated by unified supervision.
+  Requires managing two sets of Telegram credentials (`api_id`/`api_hash` for userbot and `bot_token` for approval bot). Mitigated by unified supervision.
 
 ---
 
-## ADR-003: Single Process Application Topology
+## ADR-003: Single Python Backend Process Topology
 
 - **Status:** Accepted
 - **Reversibility:** 2-way door
 - **Options Considered:**
-  1. *Microservices*: Separate processes for FastAPI, Celery workers, userbot daemon, and approval bot daemon.
-  2. *Single Process with asyncio TaskGroup*: One FastAPI application process orchestrating background tasks under a shared event loop.
+  1. *Multi-daemon microservices*: Separate processes for FastAPI, Celery workers, userbot daemon, and approval bot daemon.
+  2. *Single Python process + Node bridge*: One Python process managing FastAPI and background `asyncio` tasks, alongside the separate Node.js WhatsApp bridge process.
 - **Decision & Rationale:**
-  Adopt Option 2 (Single Process). Running a unified process drastically reduces RAM consumption on a 2 vCPU / 4 GB VPS, eliminates inter-process message broker dependencies (Redis/RabbitMQ), and simplifies deployment to a single systemd service unit.
+  Adopt Option 2. Consolidating the Python side into a single application process minimizes RAM overhead, avoids inter-process message broker dependencies (Redis/RabbitMQ), and allows in-memory state coordination. The Node.js WhatsApp bridge remains a standalone lightweight process communicating over loopback HTTP.
 - **Trade-offs:**
-  A fatal uncaught exception in the process terminates all tasks. Mitigated by wrapping long-running tasks in structured exception handlers with restart policies.
+  A fatal uncaught exception in the Python event loop could impact all background tasks. Mitigated by `asyncio.TaskGroup` supervision with restart policies.
 
 ---
 
@@ -70,26 +70,26 @@
 - **Status:** Accepted
 - **Reversibility:** 1-way door (Fundamental Safety Invariant)
 - **Options Considered:**
-  1. *Heuristic weighted scoring*: Composite confidence score triggering auto-send above threshold.
-  2. *Pure Conjunction with Hold-Only Rule*: Every check is an independent Boolean assertion. All 11 checks must evaluate to `true` to send. Any check failure unconditionally locks the status to `HELD`.
+  1. *Weighted scoring / confidence thresholds*: Composite score triggering auto-send above threshold.
+  2. *Pure Conjunction with Hold-Only Rule*: Explicit named conditions (`MANDATORY_AUTO_SEND_CONDITIONS`). Every check is an independent Boolean assertion. Failure of any single condition unconditionally forces `HELD`.
 - **Decision & Rationale:**
-  Adopt Option 2. Under zero circumstances may an AI heuristic or secondary evaluation override an earlier `HOLD`. Failsafe behavior requires fail-closed architecture to prevent hallucinated commitments or unauthorized messages.
+  Adopt Option 2. In our fail-closed architecture, automated checks may only transition a draft to `HELD`. Only explicit owner actions may transition out of `HELD`.
 - **Trade-offs:**
-  Higher rate of false holds (lower automation rate). This trade-off is accepted by design: privacy and correctness strictly supersede reply velocity.
+  Accepts a higher false-hold rate to achieve absolute zero false-sends.
 
 ---
 
-## ADR-005: Language Policy and Amharic Staging
+## ADR-005: Language Policy and Amharic Staging Gate
 
 - **Status:** Accepted
 - **Reversibility:** 2-way door
 - **Options Considered:**
-  1. *Full multi-lingual auto-send*: Attempt automated replies in Amharic (Fidel & Romanized) immediately.
+  1. *Multi-lingual auto-send immediately*: Attempt automated replies in Amharic (Fidel & Romanized) from day one.
   2. *English auto-send MVP; Amharic Hold-by-Default*: Non-English inbound messages produce drafts but are unconditionally held for human approval until formal evaluation gates pass.
 - **Decision & Rationale:**
-  Adopt Option 2. Local speech and translation models exhibit elevated error rates on Amharic. Holding all non-English messages prevents miscommunications while allowing the owner to build confidence in draft quality. Automated Amharic sends are deferred to Phase 7.
-- **Trade-offs:**
-  All Amharic interactions require manual approval tap in the MVP.
+  Adopt Option 2. The primary rationale is that safety gate and verifier accuracy on Amharic is currently unmeasured in production. To protect against hallucinated promises or tone failures, all non-English messages fail closed into `HELD`.
+- **Phase 7 Exit Criteria**:
+  Autonomous Amharic replies may only be enabled after demonstrating $\ge 99.5\%$ safety precision with zero unsafe false-sends across a dedicated evaluation benchmark of $\ge 200$ test cases.
 
 ---
 
@@ -98,27 +98,23 @@
 - **Status:** Accepted
 - **Reversibility:** 2-way door
 - **Options Considered:**
-  1. *Voice reply generation via edge-tts*: Synthesize outbound voice notes using unofficial Edge browser endpoints.
-  2. *Strict Text-Only Outbound*: Disable audio generation entirely in MVP.
+  1. *Voice reply synthesis via edge-tts*: Synthesize outbound voice notes using unofficial browser endpoints.
+  2. *Strict Text-Only Outbound*: Disable outgoing voice note synthesis.
 - **Decision & Rationale:**
-  Adopt Option 2. Edge-tts relies on unofficial endpoints prone to rate-limiting and breaking changes. Furthermore, synthetic voice notes increase human impersonation risk. Outbound communication remains text-only.
-- **Trade-offs:**
-  Cannot auto-respond to voice notes with voice notes. Inbound voice notes are held for owner review.
+  Adopt Option 2. Edge-tts relies on unofficial endpoints prone to rate limits and breaking changes. In addition, synthetic voice messages carry elevated impersonation risks. Outbound communication remains text-only. Inbound voice notes are held by default.
 
 ---
 
-## ADR-007: Repository Open-Source License (MIT)
+## ADR-007: Repository Open-Source License Choice
 
 - **Status:** Proposed, pending ownership confirmation
 - **Reversibility:** 1-way door (Publishing license)
 - **Options Considered:**
-  1. *MIT License*: Permissive, ecosystem-standard, matches Telethon and LangGraph dependencies.
-  2. *AGPLv3 License*: Copyleft, restrictive, incompatible with downstream embedding.
-  3. *Proprietary / Closed Source*: Prevents open collaboration.
+  1. *MIT License*: Permissive, ecosystem standard, matches Telethon and LangGraph.
+  2. *Apache-2.0 License*: Permissive with explicit patent grant and trademark protection.
+  3. *Proprietary / Closed Source*: Restricts community distribution.
 - **Decision & Rationale:**
-  Propose MIT License. Dependent on owner verification regarding upstream repository (`Whatsapp-Assistant-Agent`) authorship. Zero code is copied from AGPL projects; ideas from upstream research are credited with proper attribution.
-- **Trade-offs:**
-  Permissive licensing allows commercial reuse by third parties.
+  Propose MIT (or Apache-2.0 as alternative permissive option). Final license text and copyright attribution wait for owner confirmation of upstream repository relationships.
 
 ---
 
@@ -127,25 +123,23 @@
 - **Status:** Accepted
 - **Reversibility:** 2-way door
 - **Options Considered:**
-  1. *Heavy In-Process ML Profile*: Run local Whisper (~2.1 GB) + BLIP (~1.6 GB) + E5 (~800 MB), requiring $\ge$ 8 GB RAM VPS (~$7.40/mo).
-  2. *Lean Operational Profile*: Offload LLM inference to remote API; disable local STT/BLIP by default; fit within 2 vCPU / 4 GB RAM VPS (~$4.15/mo).
+  1. *Heavy ML Profile*: Load local Whisper, BLIP, and embeddings in host memory ($\ge 8\text{ GB RAM}$).
+  2. *Lean Operational Profile*: Offload LLM inference to remote API; keep local STT/BLIP disabled by default; run comfortably on 2 vCPU / 4 GB RAM VPS.
 - **Decision & Rationale:**
-  Adopt Option 2. Keeps hosting costs low, guarantees memory safety without Linux OOM crashes, and eliminates GPU requirements.
+  Adopt Option 2. Minimizes resource footprint, eliminates OOM risks, and avoids GPU hosting requirements.
 
 ---
 
-## ADR-009: Local-Only Unlock and At-Rest Session Encryption
+## ADR-009: Local-Only Unlock and In-Memory StringSession
 
 - **Status:** Accepted
 - **Reversibility:** 1-way door (Security Architecture)
 - **Options Considered:**
-  1. *Plaintext session storage*: Store `.session` file directly on disk.
-  2. *Chat-based unlock*: Allow owner to send `/unlock <passphrase>` via Telegram bot.
-  3. *Local-only unlock with Argon2id + AES-256-GCM*: Encrypt session file at rest; accept unlock secret exclusively via HTTPS web dashboard, local SSH, or systemd credentials.
+  1. *Plaintext session file on disk*: Standard Telethon `.session` SQLite database.
+  2. *Chat-based remote unlock*: Unlock MTProto session via Telegram command.
+  3. *Local-only unlock with StringSession*: Session exists in RAM as a Telethon `StringSession`; encrypted at rest via Argon2id + AES-256-GCM; unlocked exclusively via loopback (`127.0.0.1`) dashboard or CLI.
 - **Decision & Rationale:**
-  Adopt Option 3. Chat channels are untrusted transport vectors. If an attacker hijacked the Telegram session or spoofed the chat ID, chat-based unlock would compromise the master secret. The unlock secret is strictly isolated from the dashboard login password.
-- **Trade-offs:**
-  Requires the owner to access the local HTTPS dashboard or SSH terminal after each server reboot to enter the unlock secret.
+  Adopt Option 3. Plaintext files on disk risk exposure during backups or file audits. Chat-based unlock violates the principle of "restrict remotely, loosen locally". Local unlock restricts secret handling to local administrative channels.
 
 ---
 
@@ -154,18 +148,7 @@
 - **Status:** Accepted
 - **Reversibility:** 1-way door (Repository History Publishing)
 - **Options Considered:**
-  1. *Import Full Git History*: Retain all 6 historical commits from the original WhatsApp prototype.
-  2. *Single Clean Baseline Commit*: Import a sanitized snapshot of the codebase as a single initial commit (`import baseline from the original whatsapp repo (sanitized)`) with attribution to the upstream repository.
+  1. *Import Full Git History*: Retain full historical commits from the original prototype.
+  2. *Single Clean Baseline Commit*: Import a clean, sanitized snapshot of the codebase as a single baseline commit (`import baseline from the original whatsapp repo (sanitized)`).
 - **Decision & Rationale:**
-  Adopt Option 2. An exhaustive scan of the 6 historical commits revealed 110 sensitive instances including 86 real phone numbers in committed log files (`data/app.log`), personal names in commit messages, and real chat logs in `data/style_examples.md`. Publishing raw history would permanently leak personal data to the public.
-- **Trade-offs:**
-  Historical commit granularity is collapsed into a single clean baseline. Upstream provenance is preserved via explicit attribution in documentation and commit messages.
-
----
-
-## Attribution and Dependency License Notes
-
-- **Upstream Origin**: Core concepts and initial WhatsApp LangGraph agent derived from `https://github.com/Shahd132/Whatsapp-Assistant-Agent`.
-- **Telethon**: Licensed under MIT (LonamiWebs). Pinned dependency `telethon==1.45.0`.
-- **LGPL Compliance**: Any LGPL dependencies (e.g. optional media utilities) must be consumed strictly as dynamic external package dependencies without vendoring.
-- **AGPL Exclusion**: Zero code has been copied from AGPL projects.
+  Adopt Option 2. An audit of the historical prototype commits revealed that previous commits contained personal data and runtime logs. Importing the raw history would permanently expose sensitive personal information in public git logs. Collapsing into a sanitized baseline commit provides complete privacy guarantees while preserving architectural continuity. Attribution details will be finalized upon owner confirmation.

@@ -1,0 +1,89 @@
+# Python environment & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+venv/
+.venv/
+env/
+ENV/
+
+# Model & ML artifact caches
+.cache/
+models/
+hf_cache/
+checkpoints/
+*.bin
+*.pt
+*.safetensors
+
+# Node & WhatsApp bridge
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Telegram & session credentials
+*.session
+*.session-journal
+telegram.session*
+sessions/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Runtime logs
+*.log
+logs/
+data/*.log
+
+# Personal data & chat exports
+data/about_me.md
+data/schedule.json
+data/style_examples.md
+data/*.txt
+chat_exports/
+exports/
+*.export.txt
+
+# Preserve example templates in data/
+!data/*.example.*
+!data/*.example
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,29 @@
+{
+  "timezone": "UTC",
+  "recurring_commitments": [
+    {
+      "day": "Monday",
+      "start": "09:30",
+      "end": "10:30",
+      "title": "Engineering Sync",
+      "auto_reply_note": "In team meeting until 10:30 UTC"
+    },
+    {
+      "day": "Wednesday",
+      "start": "14:00",
+      "end": "16:00",
+      "title": "Deep Work Block",
+      "auto_reply_note": "Focusing on code review, will reply after 16:00 UTC"
+    }
+  ],
+  "upcoming_events": [
+    {
+      "date": "2026-11-01",
+      "start": "00:00",
+      "end": "23:59",
+      "status": "out_of_office",
+      "title": "Public Holiday",
+      "auto_reply_note": "Out of office for holiday"
+    }
+  ]
+}

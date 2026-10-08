@@ -6,6 +6,7 @@ from app.channels.events import (
     IntakeVerdict,
     MediaType,
 )
+from app.channels.intake import IntakeRouter, evaluate_intake_verdict
 from app.channels.ledger import InboundLedger, SqliteInboundLedger
 from app.channels.whatsapp import WhatsAppAdapter
 
@@ -15,9 +16,11 @@ __all__ = [
     "ContactProfile",
     "InboundEvent",
     "InboundLedger",
+    "IntakeRouter",
     "IntakeVerdict",
     "MediaType",
     "SendResult",
     "SqliteInboundLedger",
     "WhatsAppAdapter",
+    "evaluate_intake_verdict",
 ]

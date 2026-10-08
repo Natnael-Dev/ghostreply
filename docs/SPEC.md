@@ -68,16 +68,25 @@ The system shall autonomously transmit a reply if and only if EVERY condition in
 3. `sender_allowlisted`: Sender identifier exists in the active contact allowlist.
 4. `inbound_is_original_text`: Inbound message is standard direct text (NOT a forwarded message, NOT quoted text, NOT an edited message, NOT media/voice/image, NOT a link preview).
 5. `message_not_stale`: Inbound message timestamp is within the allowable recency window ($T_{now} - T_{msg} \le 15\text{ minutes}$).
-6. `language_is_confidently_english`: Language classifier classifies message as English with high confidence ($\ge 0.90$) AND message contains zero Ge'ez characters (`[\u1200-\u137F]`).
+6. `language_is_confidently_english`: Language classifier (`lingua-py` / `fasttext`) classifies message as English with high confidence ($\ge 0.90$) AND message contains zero Ge'ez characters (`[\u1200-\u137F]`).
 7. `inbound_prefilter_clean`: Inbound text matches zero financial triggers (*"telebirr"*, *"ብር"*, *"cbe"*, *"bank"*, *"pay"*), RSVP triggers (*"meet"*, *"come"*, *"attend"*), or promise triggers (*"promise"*, *"commit"*).
 8. `draft_prefilter_clean`: Generated draft text matches zero unverified financial triggers, RSVP commitments, or promises.
 9. `quoted_span_verified`: Every factual assertion in the draft is verified by verbatim substring matching against retrieved knowledge files (`about_me.md`, `schedule.json`).
-10. `entailment_verified`: Independent secondary LLM judge, provided with the full draft and full retrieved knowledge context, verifies logical entailment.
+10. `entailment_verified`: Independent secondary LLM judge, provided with the full draft and full retrieved knowledge context, verifies logical entailment. The judge must explicitly answer: *"Does this draft commit or agree on behalf of the owner?"*. If yes, verification fails.
 11. `not_needs_owner`: Generation node does not flag `needs_owner = true`.
 12. `contact_mode_allows_auto`: Contact configuration mode is `auto_send` (NOT `always_ask` or `ignore`).
 13. `kill_switch_inactive`: Global database kill switch flag is `false`.
 14. `not_in_shadow_mode`: Channel adapter configuration has `shadow_mode = false`.
 15. `cooldown_and_rate_limits_clear`: Neither per-chat nor global send caps or cooldown thresholds are exceeded.
+
+#### Claim-Free Replies Policy:
+Autonomous send for replies without factual claims is restricted strictly to a **narrow allowlist**: "thanks", "thank you", "ok", "okay", or standard emojis (e.g. 👍, 🙏, 😊).
+- **Prohibited Conversational Auto-Sends**: Any reply that agrees, accepts, confirms, or commits (such as "sure", "will do", "I'll send it", "deal", "sounds good") is strictly prohibited from autonomous send and MUST be forced to `HELD`.
+
+#### Language Detection & Short-Text Handling:
+- **Detector**: `lingua-py` is the designated language classifier.
+- **Short-Text Handling**: For messages under 3 words or 15 characters where n-gram statistical detection is unreliable, if the text consists strictly of ASCII letters matching a known English greeting/acknowledgment lexicon, it passes; otherwise, it fails closed to `HELD`.
+- **Expected False-Hold Rate**: ~15–25% false-hold rate on informal or abbreviated English is anticipated (*CLAIMED: unmeasured baseline assumption pending Phase 6 telemetry*).
 
 - **Given**: An inbound message and a generated draft reply.
 - **When**: The draft is evaluated against `MANDATORY_AUTO_SEND_CONDITIONS`.
@@ -85,7 +94,7 @@ The system shall autonomously transmit a reply if and only if EVERY condition in
 
 ### FR-002: State Machine and Hold Invariant
 Draft lifecycle shall be governed by an explicit finite state machine with states:
-`HELD`, `APPROVED`, `SENT`, `REJECTED`, `EDITED`.
+`HELD`, `APPROVED`, `SENT`, `REJECTED`, `EDITED`, `EXPIRED`, `SEND_UNKNOWN`.
 
 ```mermaid
 stateDiagram-v2
@@ -93,13 +102,25 @@ stateDiagram-v2
     HELD --> APPROVED: Explicit Owner Action [Approve]
     HELD --> REJECTED: Explicit Owner Action [Reject]
     HELD --> EDITED: Explicit Owner Action [Edit]
-    APPROVED --> SENT: Dispatch Complete
+    HELD --> EXPIRED: TTL Expired (24h)
+    APPROVED --> sending: Re-verify Kill Switch / Caps
+    sending --> SENT: Dispatch Acknowledged
+    sending --> SEND_UNKNOWN: Process Crash / Timeout
     EDITED --> HELD: New Draft Created (New Nonce + Hash)
+    EXPIRED --> [*]
     REJECTED --> [*]
     SENT --> [*]
+    SEND_UNKNOWN --> [*]: Owner Alert / Manual Audit
 ```
 
-- **Invariant**: ONLY an explicit human action by the owner can transition a draft out of `HELD`. Automated checks, heuristics, secondary LLMs, or timeouts can NEVER transition a draft out of `HELD`.
+- **Invariant**: ONLY an explicit human action by the owner can transition a draft out of `HELD`. Automated checks, heuristics, secondary LLMs, or timeouts can NEVER transition a draft out of `HELD` to `APPROVED` or `SENT`.
+- **Terminal States**:
+  - `EXPIRED`: Automatic, non-sending terminal state entered if a draft remains in `HELD` longer than the expiration TTL ($T_{\text{expire}} = 24\text{ hours}$). Expired drafts cannot be approved.
+  - `SEND_UNKNOWN`: Entered if a process crash, unhandled exception, or network partition occurs after the state was atomically marked `sending` but before delivery was confirmed. The system must NEVER automatically retry `SEND_UNKNOWN` drafts; it immediately notifies the owner to inspect external chat state.
+- **Old-Draft Approvals & Age Re-Confirmation**:
+  - If the owner attempts to approve a draft older than $T_{\text{reconfirm}} = 30\text{ minutes}$, the Approval Bot displays the draft's age (e.g. *"⚠️ Draft generated 45m ago. Still send?"*) and requires an explicit second confirmation tap before transitioning to `APPROVED`.
+- **Send-Time Re-Verification**:
+  - The transition from `APPROVED` to `SENT` must re-query the kill switch flag, shadow mode status, and rate limit counters immediately prior to socket transmission. If the kill switch was engaged or a cap was exceeded after approval was granted, the transmission is aborted and the draft transitions back to `HELD`.
 - **Draft Edit Flow**:
   - When the owner edits a held draft (via Telegram or dashboard), the existing item transitions to `EDITED`.
   - A new held record is generated with a fresh server-side random nonce and newly computed draft-hash.
@@ -110,7 +131,7 @@ The language verification check must fail closed:
 - If the language detector is not confidently English ($\text{confidence} < 0.90$), OR
 - If the message contains any Ge'ez character (`[\u1200-\u137F]`),
 the message is classified as non-English and forced to `HELD` with an approval notification to the owner.
-- Autonomous non-English auto-sends are deferred to Phase 7 behind an empirical evaluation gate ($\ge 99.5\%$ safety precision across $\ge 200$ test cases).
+- Autonomous non-English auto-sends are deferred to Phase 7 behind an empirical evaluation gate ($\ge 99.5\%$ safety precision across $\ge 600$ held-out test cases).
 
 ### FR-004: Inbound Media Routing (Hold-by-Default)
 Inbound voice notes, audio files, and images shall be held by default. Local STT (faster-whisper) and image captioning (BLIP) are optional extras, disabled by default in the lean operational profile.

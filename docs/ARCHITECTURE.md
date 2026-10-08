@@ -75,8 +75,8 @@ class ChannelAdapter(Protocol):
 
 ### 2.1 Namespaced Identifiers
 All contact and conversation IDs are strictly namespaced:
-- WhatsApp contacts: `wa:<phone_number>` (e.g. `wa:+15550199000`)
-- Telegram contacts: `tg:<telegram_user_id>` (e.g. `tg:987654321`)
+- WhatsApp contacts: `wa:<phone_number>` (e.g. `wa:<phone_id>`)
+- Telegram contacts: `tg:<telegram_user_id>` (e.g. `tg:<user_id>`)
 
 ---
 

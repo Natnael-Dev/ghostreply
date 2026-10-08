@@ -132,7 +132,7 @@ Only 1-on-1 private direct messages shall be processed. Group chats, supergroups
 
 ### FR-007: Multi-Channel Adapter Interface
 The core engine shall interact with channels through an abstract `ChannelAdapter` protocol supporting namespaced identities (`wa:<id>`, `tg:<id>`), message reception, plaintext sending, identity resolution, and media retrieval.
-- **Given**: An event from WhatsApp (`wa:1234567890`) or Telegram (`tg:987654321`).
+- **Given**: An event from WhatsApp (`wa:phone_id`) or Telegram (`tg:user_id`).
 - **When**: The adapter passes the event to core.
 - **Then**: The core operates uniformly on the namespaced ID without platform-specific branch leakage.
 

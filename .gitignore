@@ -78,6 +78,7 @@ data/*.txt
 chat_exports/
 exports/
 *.export.txt
+.local-denylist
 
 # Preserve example templates in data/
 !data/*.example.*

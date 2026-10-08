@@ -115,14 +115,14 @@
 
 ## ADR-007: Repository Open-Source License Choice
 
-- **Status:** Proposed, pending ownership confirmation
+- **Status:** Accepted
 - **Reversibility:** 1-way door (Publishing license)
 - **Options Considered:**
   1. *MIT License*: Permissive, ecosystem standard, matches Telethon and LangGraph.
   2. *Apache-2.0 License*: Permissive with explicit patent grant and trademark protection.
   3. *Proprietary / Closed Source*: Restricts community distribution.
 - **Decision & Rationale:**
-  Propose MIT (or Apache-2.0 as alternative permissive option). Final license text and copyright attribution wait for owner confirmation of upstream repository relationships.
+  Adopt Option 1 (MIT License). Ownership and copyright confirmed by owner (Natnael Tezazu). LICENSE file established with standard permissive open-source terms.
 
 ---
 
@@ -159,4 +159,16 @@
   1. *Import Full Git History*: Retain full historical commits from the original prototype.
   2. *Single Clean Baseline Commit*: Import a clean, sanitized snapshot of the codebase as a single baseline commit (`import baseline from the original whatsapp repo (sanitized)`).
 - **Decision & Rationale:**
-  Adopt Option 2. An audit of the historical prototype commits revealed that previous commits contained personal data and runtime logs. Importing the raw history would permanently expose sensitive personal information in public git logs. Collapsing into a sanitized baseline commit provides complete privacy guarantees while preserving architectural continuity. Attribution details will be finalized upon owner confirmation.
+  Adopt Option 2. An audit of the historical prototype commits revealed that previous commits contained personal data and runtime logs. Importing the raw history would permanently expose sensitive personal information in public git logs. Collapsing into a sanitized baseline commit provides complete privacy guarantees while preserving architectural continuity.
+
+---
+
+## ADR-011: Pre-Consumer Interface Contract Revision (v0.1.1)
+
+- **Status:** Accepted
+- **Reversibility:** 1-way door (Pre-consumer interface freeze)
+- **Options Considered:**
+  1. *Retain v0.1 Contracts*: Keep loose default fields, boolean gate inputs, and synchronous adapter stubs.
+  2. *Adopt v0.1.1 Hardened Seams*: Mandate required safety flags on `InboundEvent`, tri-state verifier checks (`Optional[bool]` failing closed on None), async streaming inbound delivery, idempotent message claims via `InboundLedger`, scoped callback tokens with server-side hashing, immutable drafts, terminal `SHADOW_LOGGED` state, and injectable mock interfaces (`Clock`, `LLMClient`, `RateLimiter`).
+- **Decision & Rationale:**
+  Adopt Option 2. Before independent feature lanes begin development, tightening contracts prevents consumer lanes from inventing uncoordinated fallbacks, ensures fail-closed semantics for unevaluated verifiers, and guarantees that audit trails and draft storage remain mathematically immutable.

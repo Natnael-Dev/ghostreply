@@ -86,7 +86,7 @@ Autonomous send for replies without factual claims is restricted strictly to a *
 #### Language Detection & Short-Text Handling:
 - **Detector**: `lingua-py` is the designated language classifier.
 - **Short-Text Handling**: For messages under 3 words or 15 characters where n-gram statistical detection is unreliable, if the text consists strictly of ASCII letters matching a known English greeting/acknowledgment lexicon, it passes; otherwise, it fails closed to `HELD`.
-- **Expected False-Hold Rate**: ~15–25% false-hold rate on informal or abbreviated English is anticipated (*CLAIMED: unmeasured baseline assumption pending Phase 6 telemetry*).
+- **Expected False-Hold Rate**: Informal or abbreviated English is anticipated to experience false holds pending systematic measurement in Phase 6 telemetry.
 
 - **Given**: An inbound message and a generated draft reply.
 - **When**: The draft is evaluated against `MANDATORY_AUTO_SEND_CONDITIONS`.
@@ -275,6 +275,6 @@ The dispatch engine shall enforce:
 - Git repository clean status: **VERIFIED** (`git status`, 2026-10-07).
 - PyPI / GitHub package name availability: **VERIFIED** (HTTP 404 queries, 2026-10-07).
 - Pyrogram license (LGPLv3): **VERIFIED** (PyPI metadata query, 2026-10-07).
-- VPS Resident Memory Profile (< 1.8 GB lean): **CLAIMED** (Phase 0.5 estimate pending Phase 6 benchmarking).
-- Whisper / MMS Word Error Rates (> 75% / 52%): **CLAIMED** (Phase 0.5 research finding pending Phase 7 evals).
-- LLM Token Efficiency & API Cost ($0.30/mo): **CLAIMED** (Phase 0.5 model calculation pending production telemetry).
+- Lean Operational Memory Profile: Pending Phase 6 benchmarking.
+- Local STT Amharic Performance: Deferred to Phase 7 evals.
+- Production LLM Token Telemetry: Pending Phase 6 measurement.

@@ -204,9 +204,48 @@ async def send_text(body: TextRequest):
     return await _send("text", "/send-text", body.model_dump(), cooldown=3)
 
 
+class PhoneLocationRequest(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float | None = None
+
+
+def _phone_fix() -> dict | None:
+    raw = db.get_setting("phone_location")
+    if not raw:
+        return None
+    try:
+        fix = json.loads(raw)
+        if time.time() - fix.get("ts", 0) > 300:
+            db.set_setting("phone_location", "")
+            return None
+        return fix
+    except Exception:
+        db.set_setting("phone_location", "")
+        return None
+
+
+class SendLocationRequest(BaseModel):
+    contact: str = Field(min_length=1, max_length=60)
+    latitude: float | None = None
+    longitude: float | None = None
+    accuracy: float | None = None
+
+
+@router.post("/api/phone-location", dependencies=[Depends(require_auth)])
+async def phone_location(body: PhoneLocationRequest):
+    data = {"lat": body.latitude, "lon": body.longitude, "acc": body.accuracy, "ts": time.time()}
+    db.set_setting("phone_location", json.dumps(data))
+    return {"status": "ok"}
+
+
 @router.post("/api/send-location", dependencies=[Depends(require_auth)])
-async def send_location(body: LocationRequest):
-    return await _send("location", "/send-location", body.model_dump(), cooldown=20)
+async def send_location(body: SendLocationRequest):
+    fix = _phone_fix()
+    if not fix:
+        raise HTTPException(409, "No phone location fix available")
+    payload = {"contact": body.contact, "latitude": fix["lat"], "longitude": fix["lon"]}
+    return await _send("location", "/send-location", payload, cooldown=20)
 
 
 @router.post("/api/transcribe", dependencies=[Depends(require_auth)])

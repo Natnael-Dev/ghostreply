@@ -3,7 +3,8 @@
 
 Performs:
 1. Gitleaks scan (if gitleaks binary is present).
-2. Phone-number pattern check (regex for international phone numbers).
+2. Separator-tolerant phone-number pattern check (spaces, dashes, parens, optional +).
+   Explicit markers for fake test fixtures (e.g. FAKE_TEST_NUMBER, 555-01XX) are permitted.
 3. Local real-name sweep using uncommitted .local-denylist (if present).
 """
 
@@ -14,7 +15,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-PHONE_REGEX = re.compile(r"(\+?\b\d{10,15}\b)")
+# Matches candidates with optional country code, parentheses, spaces, dots, dashes
+PHONE_CANDIDATE_REGEX = re.compile(
+    r"(\+?\s*(?:\(\s*\d{1,4}\s*\)|\d{1,4})?[\s.-]*(?:\(?\s*\d{2,4}\s*\)?[\s.-]*){2,5}\d{2,4})"
+)
+
+# Explicit marker allowing fake test numbers in fixtures / tests
+FAKE_NUMBER_MARKER = re.compile(
+    r"(?i)(#\s*fake[-_]?test[-_]?number|FAKE_TEST_NUMBER|mock[-_]?phone|555[-_.]?01\d{2}|000[-_.]?0000|\+155501)"
+)
 
 IGNORED_DIRS = {
     ".git",
@@ -65,16 +74,24 @@ def scan_file(file_path: Path, denylist: list[str]) -> list[dict]:
     try:
         with open(file_path, "r", encoding="utf-8", errors="replace") as fp:
             for line_no, line in enumerate(fp, start=1):
-                # Check phone numbers
-                for match in PHONE_REGEX.finditer(line):
-                    val = match.group(0)
-                    # Exclude common port/timestamp/hash false positives
-                    if not (val.startswith("2026") or val.startswith("127001")):
-                        findings.append({
-                            "type": "phone_pattern",
-                            "file": str(file_path),
-                            "line": line_no,
-                        })
+                # Check for explicit fake marker
+                has_fake_marker = bool(FAKE_NUMBER_MARKER.search(line))
+
+                # Check phone candidates
+                if not has_fake_marker:
+                    for match in PHONE_CANDIDATE_REGEX.finditer(line):
+                        raw_match = match.group(0)
+                        digits = re.sub(r"\D", "", raw_match)
+                        # Only flag if total digit count is between 10 and 15 digits
+                        if 10 <= len(digits) <= 15:
+                            # Filter obvious non-phone false positives (dates, loopback, ports)
+                            if not (digits.startswith("2026") or digits.startswith("127001") or digits.startswith("0000000000")):
+                                findings.append({
+                                    "type": "phone_pattern",
+                                    "file": str(file_path),
+                                    "line": line_no,
+                                })
+
                 # Check real names from local denylist
                 for name in denylist:
                     if re.search(r"(?i)\b" + re.escape(name) + r"\b", line):
@@ -96,8 +113,15 @@ def main() -> int:
 
     # 1. Gitleaks execution
     gitleaks_bin = shutil.which("gitleaks")
+    if not gitleaks_bin:
+        # Check standard winget install location on Windows
+        winget_gitleaks = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+        for p in winget_gitleaks.glob("**/gitleaks.exe"):
+            gitleaks_bin = str(p)
+            break
+
     if gitleaks_bin:
-        print("[1/2] Running Gitleaks scan...")
+        print(f"[1/2] Running Gitleaks scan ({gitleaks_bin})...")
         res = subprocess.run([gitleaks_bin, "dir", "--no-banner", str(root)])
         if res.returncode != 0:
             print("ERROR: Gitleaks detected secrets!")
@@ -107,7 +131,7 @@ def main() -> int:
         print("[1/2] Gitleaks binary not found in PATH; skipping binary run.")
 
     # 2. Pattern and denylist scan
-    print("[2/2] Scanning files for phone patterns and personal data...")
+    print("[2/2] Scanning files for separator-tolerant phone patterns and personal data...")
     findings = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]

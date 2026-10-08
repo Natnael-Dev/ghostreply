@@ -1,15 +1,16 @@
-# ghostreply Core Interface Contracts (v0.1)
+# ghostreply Core Interface Contracts (v0.1.1)
 
-**Status:** FROZEN (Phase 1 Baseline)  
-**Contract Invariant:** These interfaces define the system-wide seams across channels, safety verifiers, storage, and lifecycle management. Any change or addition to these contracts requires an approved Architecture Decision Record (ADR).
+**Status:** FROZEN (Phase 1 Baseline - Revision 0.1.1, ADR-011)  
+**Contract Invariant:** These interfaces define the system-wide seams across channels, safety verifiers, storage, idempotency, and lifecycle management. Any change or addition to these contracts requires an approved Architecture Decision Record (ADR).
 
 ---
 
-## 1. Domain Event & Channel Contracts
+## 1. Domain Event & Intake Contracts
 
 ### 1.1 InboundEvent Data Model
 
-Every channel adapter translates raw transport payloads into a normalized `InboundEvent`.
+Every channel adapter translates transport payloads into a strictly typed `InboundEvent`.  
+**Safety Invariant:** All safety flags are REQUIRED with no default values to prevent accidental fail-open defaults in consumer adapters.
 
 ```python
 from dataclasses import dataclass, field
@@ -28,16 +29,18 @@ class InboundEvent:
     sender_id: str                      # Namespaced: "wa:<phone_or_lid>" or "tg:<telegram_user_id>"
     chat_id: str                        # Namespaced: "wa:<chat_id>" or "tg:<chat_id>"
     timestamp: datetime                 # Original UTC timestamp from channel
-    text: Optional[str] = None          # Raw incoming text (stripped of link-previews)
-    media_type: Optional[MediaType] = None
-    media_id: Optional[str] = None      # Internal or channel-specific blob pointer
+    text: Optional[str]                 # Raw incoming text (stripped of link-previews)
+    media_type: Optional[MediaType]
+    media_id: Optional[str]             # Internal or channel-specific blob pointer
     
-    # Structural safety flags (fail-closed triggers)
-    is_group: bool = False              # Must be False for 1-on-1 private reply scope
-    is_forwarded: bool = False          # Forwarded text fails closed to HELD
-    is_quoted: bool = False             # Quoted context fails closed to HELD
-    is_edited: bool = False             # Edited message fails closed to HELD
-    has_link_preview: bool = False      # Stripped; treated as untrusted text
+    # Structural safety flags (REQUIRED - no defaults permitted)
+    is_group: bool                      # True if message originates from group/supergroup/channel
+    is_forwarded: bool                  # True if message was forwarded
+    is_quoted: bool                     # True if message quotes or replies to another message
+    is_edited: bool                     # True if message is an edited revision
+    has_link_preview: bool              # True if message metadata contains link preview cards
+    is_bot: bool                        # True if sender is identified as an automated bot
+    is_self: bool                       # True if sender is the owner's own user account
     
     # Opaque transport diagnostics
     raw_metadata: Dict[str, Any] = field(default_factory=dict)
@@ -45,9 +48,28 @@ class InboundEvent:
 
 ---
 
-### 1.2 ChannelAdapter Protocol
+### 1.2 Intake Verdict & Pre-Gate Triage
+
+Messages are evaluated by the Intake Pipeline before reaching the safety gate or LLM draft generation.
 
 ```python
+from enum import Enum
+
+class IntakeVerdict(str, Enum):
+    DROP = "DROP"       # Silently ignored: group chats, bots, self-messages
+    PROCESS = "PROCESS" # Eligible 1-on-1 direct message: proceed to pre-filter and gate
+```
+
+**Triage Invariant:**
+- If `event.is_group == True` OR `event.is_bot == True` OR `event.is_self == True`: verdict is `IntakeVerdict.DROP`.
+- Otherwise: verdict is `IntakeVerdict.PROCESS`.
+
+---
+
+### 1.3 ChannelAdapter Protocol & Inbound Delivery
+
+```python
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -88,6 +110,17 @@ class ChannelAdapter(Protocol):
     async def download_media(self, media_id: str) -> bytes:
         """Download raw binary payload for an incoming media item."""
         ...
+        
+    def register_inbound_handler(
+        self,
+        handler: Callable[[InboundEvent], Awaitable[None]]
+    ) -> None:
+        """Register asynchronous callback for normalized inbound message delivery."""
+        ...
+        
+    def stream_inbound(self) -> AsyncIterator[InboundEvent]:
+        """Yield inbound events as an asynchronous iterator."""
+        ...
 ```
 
 ---
@@ -96,13 +129,14 @@ class ChannelAdapter(Protocol):
 
 ### 2.1 GateInput & GateDecision
 
-```python
-from enum import Enum
-from typing import List
+**Verifier Tri-State Invariant:** Verifier fields are `Optional[bool]`.
+- `True`: Check ran and verified safe.
+- `False`: Check ran and failed verification.
+- `None`: Check was not run or experienced an error (fails closed to `HOLD` with `VERIFIER_NOT_RUN` or `VERIFIER_ERROR`).
 
+```python
 class HoldReasonCode(str, Enum):
-    # Channel and Structural Triggers
-    GROUP_MESSAGE_IGNORED = "GROUP_MESSAGE_IGNORED"
+    # Structural Inbound Triggers
     FORWARDED_MESSAGE = "FORWARDED_MESSAGE"
     QUOTED_MESSAGE = "QUOTED_MESSAGE"
     EDITED_MESSAGE = "EDITED_MESSAGE"
@@ -128,6 +162,8 @@ class HoldReasonCode(str, Enum):
     ENTAILMENT_COMMITS_OR_AGREES = "ENTAILMENT_COMMITS_OR_AGREES"
     CLAIM_FREE_NOT_ALLOWLISTED = "CLAIM_FREE_NOT_ALLOWLISTED"
     GENERATION_FLAGGED_NEEDS_OWNER = "GENERATION_FLAGGED_NEEDS_OWNER"
+    VERIFIER_NOT_RUN = "VERIFIER_NOT_RUN"
+    VERIFIER_ERROR = "VERIFIER_ERROR"
     
     # Configuration and Operational Triggers
     CONTACT_MODE_ASK_OR_IGNORE = "CONTACT_MODE_ASK_OR_IGNORE"
@@ -147,14 +183,17 @@ class GateInput:
     event: InboundEvent
     draft_text: str
     contact_mode: Literal["auto_send", "always_ask", "ignore"]
-    retrieved_knowledge: List[KnowledgeItem]
+    retrieved_knowledge: list[KnowledgeItem]
     detected_language: str
     language_confidence: float
     has_geez_chars: bool
-    quoted_claims_verified: bool
-    entailment_verified: bool
-    entailment_commits_or_agrees: bool
-    is_claim_free_allowlisted: bool
+    
+    # Tri-state verifier fields (None = not run or error -> forces HOLD)
+    quoted_claims_verified: Optional[bool]
+    entailment_verified: Optional[bool]
+    entailment_commits_or_agrees: Optional[bool]
+    is_claim_free_allowlisted: Optional[bool]
+    
     needs_owner: bool
     kill_switch_active: bool
     shadow_mode_active: bool
@@ -165,13 +204,13 @@ class GateDecision:
     """Decision output of the safety gate."""
     
     decision: Literal["AUTO_SEND", "HOLD"]
-    reason_codes: List[HoldReasonCode]
+    reason_codes: list[HoldReasonCode]
     evaluated_at: datetime
 ```
 
 ---
 
-## 3. Draft Lifecycle State Machine
+## 3. Draft Lifecycle State Machine & Idempotency
 
 ### 3.1 DraftState Enum
 
@@ -179,11 +218,12 @@ class GateDecision:
 class DraftState(str, Enum):
     HELD = "HELD"                       # Awaiting human owner action
     APPROVED = "APPROVED"               # Explicitly approved by owner
-    SENDING = "sending"                 # Transient lock prior to transport dispatch
+    SENDING = "SENDING"                 # Atomic reservation prior to transport dispatch
     SENT = "SENT"                       # Terminal: Dispatched and confirmed
     REJECTED = "REJECTED"               # Terminal: Explicitly rejected by owner
     EDITED = "EDITED"                   # Owner modified draft; superseded by new draft
     EXPIRED = "EXPIRED"                 # Terminal: TTL reached (24h) without approval
+    SHADOW_LOGGED = "SHADOW_LOGGED"     # Terminal: Evaluated/approved in shadow mode; logged only
     SEND_UNKNOWN = "SEND_UNKNOWN"       # Terminal: Crash/network partition during dispatch
 ```
 
@@ -191,44 +231,69 @@ class DraftState(str, Enum):
 
 | Initial State | Target State | Actor / Trigger | Guard Conditions / Re-Verifications |
 |---|---|---|---|
-| `[*]` | `HELD` | Intake / Hold Condition | Any of `MANDATORY_AUTO_SEND_CONDITIONS` fails |
-| `[*]` | `SENDING` | Auto-Send Gate | All `MANDATORY_AUTO_SEND_CONDITIONS` pass (pure conjunction) |
+| `[*]` | `HELD` | Intake / Hold Condition | Any condition in `MANDATORY_AUTO_SEND_CONDITIONS` fails |
+| `[*]` | `SENDING` | Auto-Send Gate | All conditions pass AND shadow mode=False |
+| `[*]` | `SHADOW_LOGGED` | Auto-Send Gate | All conditions pass AND shadow mode=True (terminal, no dispatch) |
 | `HELD` | `APPROVED` | Human Owner | If draft age > 30m, requires explicit reconfirmation |
-| `HELD` | `REJECTED` | Human Owner | Terminal; invalidates callback nonce |
-| `HELD` | `EDITED` | Human Owner | Spawns new draft in `HELD` with fresh nonce and SHA-256 hash |
+| `HELD` | `REJECTED` | Human Owner | Terminal; invalidates callback token |
+| `HELD` | `EDITED` | Human Owner | Spawns new draft with owner-authored text; old draft becomes EDITED |
 | `HELD` | `EXPIRED` | System (TTL Worker) | Draft age > 24 hours ($T_{\text{expire}}$) |
 | `APPROVED` | `SENDING` | Dispatch Worker | Re-verify kill switch=False, shadow mode=False, rate limits clear |
+| `APPROVED` | `SHADOW_LOGGED` | Dispatch Worker | Shadow mode is active; logs decision without socket transmission |
 | `APPROVED` | `HELD` | Dispatch Worker | Re-verification tripped (kill switch engaged or rate cap reached) |
 | `SENDING` | `SENT` | Channel Adapter | Socket transmission confirmed by transport |
 | `SENDING` | `SEND_UNKNOWN` | Crash Recovery / Timeout | Process killed or network partition; never retried |
 
-**Hold Invariant**: Automated systems, background heuristics, and LLM classifiers CANNOT transition a record from `HELD` to `APPROVED` or `SENT`. Only explicit human interaction by the owner can release a held draft.
+**Hold Invariant**: Automated systems and LLM classifiers CANNOT transition a record from `HELD` to `APPROVED` or `SENT`. Only explicit human interaction by the owner can release a held draft.
 
 ---
 
-## 4. Telegram Approval Callback Tokens
+### 3.3 Idempotency & Inbound Ledger
 
-Telegram Bot API enforces a **64-byte maximum limit** on `InlineKeyboardButton.callback_data`. Full cryptographic nonces and text bodies are stored server-side.
+To prevent duplicate auto-replies across bridge restarts and network replays:
 
-### 4.1 Callback Data Formats
-
+```python
+class InboundLedger(Protocol):
+    """Atomic ledger ensuring exactly-once processing per channel message."""
+    
+    async def claim(self, channel: ChannelType, message_id: str) -> bool:
+        """
+        Atomically insert (channel, message_id).
+        Returns True if newly claimed. Returns False if already processed or in-flight.
+        """
+        ...
 ```
-a:<draft_id>       # Approve draft (e.g. a:1042)
-r:<draft_id>       # Reject draft (e.g. r:1042)
-e:<draft_id>       # Edit draft prompt (e.g. e:1042)
-c:<draft_id>       # Confirm stale draft send (> 30 min reconfirmation)
-```
 
-### 4.2 Security Protocol
-1. **Sender Verification**: The bot callback handler strictly verifies `event.from_user.id == TELEGRAM_OWNER_ID`. Unauthorized users are ignored.
-2. **Server-Side Nonce Lookup**: Drafts in `held_queue` store a 128-bit cryptographically secure random nonce (`secrets.token_hex(16)`).
-3. **Atomic Consumption**: When an action occurs, the nonce is consumed and state is updated in SQLite atomically. Replayed or stale button presses are rejected with an alert.
+**Database Constraint**:
+- The `held_queue` table enforces a `UNIQUE(channel, inbound_message_id)` constraint for all drafts in state `SENDING`, `SENT`, or `SHADOW_LOGGED`.
+- Attempted duplicate insertions for the same inbound message fail closed.
 
 ---
 
-## 5. Session Vault Security Contract
+## 4. Telegram Approval Callback Security
 
-MTProto userbot credentials are treated as high-privilege keys and never stored in plaintext SQLite databases or unencrypted disk files.
+Telegram Bot API enforces a **64-byte maximum limit** on `InlineKeyboardButton.callback_data`.
+
+### 4.1 Scoped Callback Token Format
+
+```
+a:<draft_id>:<token>       # Approve draft (e.g. a:1042:x8A9qB_1)
+r:<draft_id>:<token>       # Reject draft (e.g. r:1042:x8A9qB_1)
+e:<draft_id>:<token>       # Edit draft prompt (e.g. e:1042:x8A9qB_1)
+c:<draft_id>:<token>       # Confirm stale draft send (> 30 min reconfirmation)
+```
+
+### 4.2 Security Protocol & Token Verification
+1. **Token Generation**: Upon draft creation, generate an 8-byte cryptographically secure random token (`secrets.token_urlsafe(8)`).
+2. **Server-Side Token Hash**: Store only the SHA-256 digest of the token in SQLite `held_queue.token_hash`.
+3. **Card Message Verification**: The approval bot verifies that the callback query originates from `TELEGRAM_OWNER_ID` AND matches the `message_id` of the approval card telegram message.
+4. **Constant-Time Comparison**: On callback receipt, compute SHA-256 of the supplied token string and compare against `token_hash` using `hmac.compare_digest`.
+5. **Single-Use Consumption**: Once approved, rejected, or expired, the token hash is cleared, invalidating all outstanding buttons.
+6. **Immutable Draft Bodies**: `DraftRecord.draft_text` is immutable. Edited drafts generate an entirely new `DraftRecord` with a new token and fresh hash.
+
+---
+
+## 5. Security & Session Vault Contracts
 
 ```python
 class VaultLockedError(Exception):
@@ -249,12 +314,15 @@ class SessionVault(Protocol):
     async def unlock(self, passphrase: str) -> bool:
         """
         Derive AES-256-GCM key via Argon2id and decrypt session string into RAM.
-        Enforces 5-attempt limit with 15-minute lockout.
+        Enforces 5-attempt limit with persistent 15-minute lockout counter.
         """
         ...
         
     async def lock(self) -> None:
-        """Purge decrypted StringSession from memory and return to LOCKED state."""
+        """
+        Purge decrypted StringSession from memory and return to LOCKED state.
+        Note: Python memory purge is best-effort due to garbage collection runtime semantics.
+        """
         ...
         
     async def get_string_session(self) -> str:
@@ -269,31 +337,54 @@ class SessionVault(Protocol):
         ...
 ```
 
+**Persistence Invariant**: The failed attempt counter and lockout timestamp are persisted in SQLite settings and survive application restarts.
+
 ---
 
-## 6. Repository Storage Contracts
+## 6. Service & Storage Contracts
 
-All database queries are encapsulated behind typed repository interfaces. Direct SQL queries in application logic are prohibited.
-
-### 6.1 ContactsRepository
+### 6.1 Clock & System Abstractions (Injectable & Mockable)
 
 ```python
-@dataclass(frozen=True)
-class ContactRecord:
-    contact_id: str                     # Namespaced: "wa:<phone>" or "tg:<id>"
-    display_name: Optional[str]
-    mode: Literal["auto_send", "always_ask", "ignore"]
-    notes: Optional[str]
-    created_at: datetime
-    updated_at: datetime
+class Clock(Protocol):
+    """Time abstraction for deterministic testing of timeouts, TTLs, and stale windows."""
+    
+    def now_utc(self) -> datetime: ...
+    async def sleep(self, seconds: float) -> None: ...
 
-class ContactsRepository(Protocol):
-    async def get_contact(self, contact_id: str) -> Optional[ContactRecord]: ...
-    async def upsert_contact(self, contact: ContactRecord) -> None: ...
-    async def list_contacts(self) -> List[ContactRecord]: ...
+class LLMClient(Protocol):
+    """Mockable LLM completion and judge interface."""
+    
+    async def generate_reply(
+        self,
+        inbound_text: str,
+        system_prompt: str,
+        context_items: list[str]
+    ) -> str: ...
+    
+    async def judge_entailment(
+        self,
+        draft_text: str,
+        context_text: str
+    ) -> tuple[bool, bool]:
+        """Returns (logically_entailed, commits_or_agrees)."""
+        ...
+
+class RateLimiter(Protocol):
+    """Stateful persisted rate limiter governing chat caps and global throttling."""
+    
+    async def check_limits(self, chat_id: str) -> bool:
+        """Return True if send rate is within per-chat and global allowances."""
+        ...
+        
+    async def record_send(self, chat_id: str) -> None:
+        """Increment counters and reset per-chat cooldown."""
+        ...
 ```
 
-### 6.2 HeldQueueRepository
+---
+
+### 6.2 HeldQueueRepository & Immutability
 
 ```python
 @dataclass(frozen=True)
@@ -304,46 +395,33 @@ class DraftRecord:
     chat_id: str
     inbound_message_id: str
     inbound_text: Optional[str]
-    draft_text: str
+    draft_text: str                     # Immutable: no update mutation method exists
     status: DraftState
-    nonce: str                          # 128-bit hex string
-    draft_hash: str                     # SHA-256 hex string of draft_text
-    reason_codes: List[str]
+    token_hash: str                     # SHA-256 hex digest of callback token
+    draft_hash: str                     # SHA-256 hex digest of draft_text
+    reason_codes: list[str]
     created_at: datetime
     updated_at: datetime
 
 class HeldQueueRepository(Protocol):
-    async def create_held_draft(self, draft: DraftRecord) -> int:
-        """Insert a newly held draft. Returns integer draft_id."""
-        ...
-        
-    async def get_draft(self, draft_id: int) -> Optional[DraftRecord]:
-        """Fetch draft by ID."""
-        ...
-        
+    async def create_held_draft(self, draft: DraftRecord) -> int: ...
+    async def get_draft(self, draft_id: int) -> Optional[DraftRecord]: ...
     async def transition_state(
         self,
         draft_id: int,
         expected_state: DraftState,
         new_state: DraftState,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """
-        Atomically transition draft state from expected_state to new_state.
-        Returns True if transition succeeded, False if state had already changed.
-        """
-        ...
-        
-    async def list_held_drafts(self, limit: int = 50, offset: int = 0) -> List[DraftRecord]:
-        """List active drafts with status HELD."""
-        ...
-        
-    async def expire_stale_drafts(self, ttl_seconds: int = 86400) -> int:
-        """Transition HELD drafts older than TTL to EXPIRED. Returns count expired."""
-        ...
+        metadata: Optional[dict[str, Any]] = None
+    ) -> bool: ...
+    async def list_held_drafts(self, limit: int = 50, offset: int = 0) -> list[DraftRecord]: ...
+    async def expire_stale_drafts(self, ttl_seconds: int = 86400) -> int: ...
 ```
 
-### 6.3 AuditLogRepository (Append-Only)
+---
+
+### 6.3 AuditLogRepository (Append-Only Enforced by Database Triggers)
+
+**Privacy Invariant**: Audit log payloads contain ONLY identifiers, hashes, reason codes, and operational metadata. Message text, names, and phone numbers are strictly prohibited from audit storage.
 
 ```python
 @dataclass(frozen=True)
@@ -353,7 +431,7 @@ class AuditRecord:
     event_type: str                     # e.g., "DRAFT_STATE_TRANSITION", "KILL_SWITCH_TOGGLED"
     entity_id: str                      # e.g., "draft:1042", "global:kill_switch"
     actor: str                          # "system", "owner_telegram", "owner_dashboard"
-    payload: Dict[str, Any]
+    payload: dict[str, Any]             # Prohibited from containing message text
 
 class AuditLogRepository(Protocol):
     async def record_event(
@@ -361,25 +439,24 @@ class AuditLogRepository(Protocol):
         event_type: str,
         entity_id: str,
         actor: str,
-        payload: Dict[str, Any]
-    ) -> None:
-        """
-        Append an immutable event to the audit log.
-        Application enforces INSERT-only; UPDATE and DELETE are prohibited.
-        """
-        ...
-        
-    async def list_events(self, limit: int = 100, offset: int = 0) -> List[AuditRecord]:
-        """Query historical audit events ordered chronologically."""
-        ...
+        payload: dict[str, Any]
+    ) -> None: ...
+    
+    async def list_events(self, limit: int = 100, offset: int = 0) -> list[AuditRecord]: ...
 ```
 
-### 6.4 ControlsRepository
+**Database Enforcement**:
+The database schema creates SQLite triggers:
+```sql
+CREATE TRIGGER IF NOT EXISTS prevent_audit_update
+BEFORE UPDATE ON audit_log
+BEGIN
+    SELECT RAISE(FAIL, 'Updates to audit_log are prohibited');
+END;
 
-```python
-class ControlsRepository(Protocol):
-    async def is_kill_switch_active(self) -> bool: ...
-    async def set_kill_switch(self, active: bool, actor: str, reason: str) -> None: ...
-    async def is_shadow_mode_active(self) -> bool: ...
-    async def set_shadow_mode(self, active: bool, actor: str) -> None: ...
+CREATE TRIGGER IF NOT EXISTS prevent_audit_delete
+BEFORE DELETE ON audit_log
+BEGIN
+    SELECT RAISE(FAIL, 'Deletions from audit_log are prohibited');
+END;
 ```

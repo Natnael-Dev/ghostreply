@@ -35,7 +35,7 @@ def test_allowlist_uses_the_number_resolved_by_the_bridge(client, agent, monkeyp
     monkeypatch.setenv("ALLOWED_CONTACTS", "+15550100000")
     lid = msg(**{"from": "000000000000001@lid"})
     assert client.post("/webhook", json=lid, headers=HEADERS).json()["action"] == "send"
-    stranger = msg(**{"from": "5@lid", "number": "+15550100000"})
+    stranger = msg(**{"from": "5@lid", "number": "+15550100001"})
     assert client.post("/webhook", json=stranger, headers=HEADERS).json()["action"] == "ignore"
 
 

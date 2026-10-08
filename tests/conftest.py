@@ -28,7 +28,8 @@ _stub("app.stt", transcribe_bytes=lambda audio, language="ar", model_size=None, 
       transcribe_base64_audio=lambda b: "heard")
 _stub("app.vision", caption_base64_image=lambda b: "a photo")
 _stub("app.style_retrieval", retrieve_examples=lambda text, k=5: [])
-_stub("app.tts", synthesize_to_base64=None)
+import app.tts  # noqa: E402
+app.tts.synthesize_to_base64 = None
 
 import pytest  # noqa: E402
 

@@ -169,11 +169,14 @@ To prevent compromised chat channels from relaxing safety policies:
 - Database file: `data/ghostreply.db` operating in WAL mode.
 - **Append-Only Audit Log**: The `audit_log` table records every state transition (`HELD`, `APPROVED`, `SENT`, `REJECTED`, `EDITED`, `KILL_SWITCH_TOGGLED`). The application layer implements only `INSERT` queries for this table; updates and deletes are prohibited.
 
-### 6.2 Backups & Litestream Policy
+### 6.2 Backups & Litestream Policy (*CLAIMED: replication throughput and recovery SLA*)
 Litestream continuously replicates `data/ghostreply.db` to remote S3-compatible object storage.
 - **Credential Isolation**: Session credentials live exclusively in `data/telegram_userbot.session.enc` and are never loaded into SQLite. Litestream never sees or replicates Telegram credentials.
 - **Backup Encryption**: Because Litestream v0.5+ removed age client-side encryption, storage at rest relies on cloud provider server-side encryption (AWS S3 SSE-KMS / Cloudflare R2 encryption at rest).
-- **Retention Policy**: Litestream snapshot retention is configured to 30 days (`retention: 720h`). A nightly maintenance task purges raw message bodies older than `MESSAGE_RETENTION_DAYS=30` from SQLite to limit exposure in retained backups.
+- **Retention & Secure Purge Policy**:
+  - Litestream snapshot retention is configured to 30 days (`retention: 720h`).
+  - Nightly maintenance task purges raw message bodies older than `MESSAGE_RETENTION_DAYS=30`.
+  - To prevent purged chat text from lingering in unallocated SQLite database pages and replicating to cloud backups, the SQLite connection enforces `PRAGMA secure_delete = ON` (zeroing out freed data blocks on delete) and executes periodic `VACUUM` maintenance.
 
 ---
 

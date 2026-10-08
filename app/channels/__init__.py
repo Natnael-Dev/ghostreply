@@ -7,6 +7,7 @@ from app.channels.events import (
     MediaType,
 )
 from app.channels.ledger import InboundLedger, SqliteInboundLedger
+from app.channels.whatsapp import WhatsAppAdapter
 
 __all__ = [
     "ChannelAdapter",
@@ -18,4 +19,5 @@ __all__ = [
     "MediaType",
     "SendResult",
     "SqliteInboundLedger",
+    "WhatsAppAdapter",
 ]

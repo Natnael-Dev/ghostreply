@@ -37,6 +37,16 @@ def init() -> None:
         _add_column(c, "held", "number", "TEXT DEFAULT ''")
         c.execute("""CREATE TABLE IF NOT EXISTS audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, kind TEXT, target TEXT)""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS trg_audit_no_update
+            BEFORE UPDATE ON audit
+            BEGIN
+                SELECT RAISE(FAIL, 'Audit log is append-only');
+            END;""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete
+            BEFORE DELETE ON audit
+            BEGIN
+                SELECT RAISE(FAIL, 'Audit log is append-only');
+            END;""")
         c.execute("""CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, chat_id TEXT, role TEXT, content TEXT)""")
         c.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages (chat_id, id)")

@@ -3,18 +3,17 @@ import base64
 import os
 import tempfile
 
-from faster_whisper import WhisperModel
-
 from app.lang import pick_language
 
-_models: dict[str, WhisperModel] = {}
+_models: dict[str, object] = {}
 
 
-def _get_model(size: str | None = None) -> WhisperModel:
+def _get_model(size: str | None = None):
     """One cached model per size, so WhatsApp voice notes can use 'small' while
     the dashboard uses a bigger one (DASHBOARD_WHISPER_SIZE=medium)."""
     size = size or os.getenv("WHISPER_MODEL_SIZE", "small")
     if size not in _models:
+        from faster_whisper import WhisperModel
         _models[size] = WhisperModel(size, device="cpu", compute_type="int8")
     return _models[size]
 

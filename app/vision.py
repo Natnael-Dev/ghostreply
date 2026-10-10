@@ -3,15 +3,16 @@ import base64
 import io
 
 from PIL import Image
-from transformers import BlipForConditionalGeneration, BlipProcessor
 
-_processor: BlipProcessor | None = None
-_model: BlipForConditionalGeneration | None = None
+_processor = None
+_model = None
 
 
 def _load():
     global _processor, _model
     if _model is None:
+        from transformers import BlipForConditionalGeneration, BlipProcessor
+
         _processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
         _model = BlipForConditionalGeneration.from_pretrained(
             "Salesforce/blip-image-captioning-base"

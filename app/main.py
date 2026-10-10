@@ -25,6 +25,7 @@ app.include_router(dashboard_router)
 app.include_router(assistant_router)
 app.include_router(approvals_router)
 app.include_router(controls_router)
+os.makedirs("data", exist_ok=True)
 db.init()
 
 REPLY_WITH_VOICE = os.getenv("REPLY_WITH_VOICE", "false") == "true"

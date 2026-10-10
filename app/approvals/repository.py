@@ -1,7 +1,6 @@
 """Immutable draft repository and storage contracts."""
 import json
 import sqlite3
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import Optional
 
 from app.approvals.state import DraftState, validate_transition
 from app.channels.events import ChannelType
+from app.gate.prefilter import Clock, SystemClock
 
 DEFAULT_DB_PATH = (
     Path(__file__).resolve().parent.parent.parent / "data" / "assistant.db"
@@ -37,8 +37,13 @@ class DraftRecord:
 class SqliteDraftRepository:
     """SQLite-backed immutable repository for held drafts."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        clock: Optional[Clock] = None,
+    ) -> None:
         self.db_path = db_path or DEFAULT_DB_PATH
+        self.clock = clock or SystemClock()
         self._ensure_table()
 
     def _ensure_table(self) -> None:
@@ -113,7 +118,7 @@ class SqliteDraftRepository:
     ) -> bool:
         """Atomically transition status from expected_state to new_state."""
         validate_transition(expected_state, new_state)
-        now_ts = time.time()
+        now_ts = self.clock.now_utc().timestamp()
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute(
                 """

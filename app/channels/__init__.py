@@ -8,6 +8,7 @@ from app.channels.events import (
 )
 from app.channels.intake import IntakeRouter, evaluate_intake_verdict
 from app.channels.ledger import InboundLedger, SqliteInboundLedger
+from app.channels.rate_limiter import RateLimiter, SqliteRateLimiter
 from app.channels.whatsapp import WhatsAppAdapter
 
 __all__ = [
@@ -19,8 +20,10 @@ __all__ = [
     "IntakeRouter",
     "IntakeVerdict",
     "MediaType",
+    "RateLimiter",
     "SendResult",
     "SqliteInboundLedger",
+    "SqliteRateLimiter",
     "WhatsAppAdapter",
     "evaluate_intake_verdict",
 ]

@@ -73,3 +73,37 @@ def test_direct_send_defaults_to_off(fresh_db):
     assert fresh_db.direct_send_enabled() is False
     fresh_db.set_setting("direct_send", "1")
     assert fresh_db.direct_send_enabled() is True
+
+
+def test_failclosed_v1_clamp_behavior(tmp_path, monkeypatch, capsys):
+    import sqlite3
+    from app import db
+
+    db_file = tmp_path / "clamp_test.db"
+    monkeypatch.setattr(db, "DB_PATH", db_file)
+
+    # (a) A pre-seeded DB with auto_reply=1 and direct_send=1 reads 0 after init
+    with sqlite3.connect(db_file) as conn:
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("INSERT INTO settings (key, value) VALUES ('auto_reply', '1'), ('direct_send', '1')")
+        conn.commit()
+
+    db.init()
+    out = capsys.readouterr().out
+    assert "[Security] Clamped auto_reply and direct_send to fail-closed defaults" in out
+    assert db.auto_reply_enabled() is False
+    assert db.direct_send_enabled() is False
+    assert db.get_setting("failclosed_v1") == "1"
+
+    # (b) The owner then sets auto_reply=1 and a second init keeps 1
+    db.set_setting("auto_reply", "1")
+    db.init()
+    assert db.auto_reply_enabled() is True
+
+    # (c) A fresh DB gets the marker and defaults
+    fresh_file = tmp_path / "fresh_clamp.db"
+    monkeypatch.setattr(db, "DB_PATH", fresh_file)
+    db.init()
+    assert db.auto_reply_enabled() is False
+    assert db.direct_send_enabled() is False
+    assert db.get_setting("failclosed_v1") == "1"

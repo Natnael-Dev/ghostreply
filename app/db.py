@@ -28,6 +28,9 @@ def _add_column(c, table: str, column: str, ddl: str) -> None:
         c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
+FAILCLOSED_MARKER = "failclosed_v1"
+
+
 def init() -> None:
     with _db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS held (
@@ -52,6 +55,13 @@ def init() -> None:
         c.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages (chat_id, id)")
         c.execute("CREATE TABLE IF NOT EXISTS contact_modes (name TEXT PRIMARY KEY, mode TEXT NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        # One-time fail-closed clamp for existing and fresh databases
+        marker = c.execute("SELECT value FROM settings WHERE key = ?", (FAILCLOSED_MARKER,)).fetchone()
+        if not marker:
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_reply', '0')")
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('direct_send', '0')")
+            c.execute("INSERT INTO settings (key, value) VALUES (?, '1')", (FAILCLOSED_MARKER,))
+            print(f"[Security] Clamped auto_reply and direct_send to fail-closed defaults ({FAILCLOSED_MARKER})")
         c.execute("""CREATE TABLE IF NOT EXISTS message_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, chat_id TEXT, name TEXT,
             direction TEXT, body TEXT, outcome TEXT)""")

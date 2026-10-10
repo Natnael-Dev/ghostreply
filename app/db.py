@@ -134,7 +134,7 @@ def set_mode(name: str, mode: str) -> None:
     if mode not in MODES:
         raise ValueError(f"bad mode: {mode}")
     with _db() as c:
-        if mode == "auto":
+        if mode == "hold":
             c.execute("DELETE FROM contact_modes WHERE name = ?", (name.strip().lower(),))
         else:
             c.execute("INSERT INTO contact_modes (name, mode) VALUES (?, ?) "
@@ -143,10 +143,10 @@ def set_mode(name: str, mode: str) -> None:
 
 def get_mode(name: str | None) -> str:
     if not name:
-        return "auto"
+        return "hold"
     with _db() as c:
         row = c.execute("SELECT mode FROM contact_modes WHERE name = ?", (name.strip().lower(),)).fetchone()
-        return row["mode"] if row else "auto"
+        return row["mode"] if row else "hold"
 
 
 def all_modes() -> dict[str, str]:
@@ -169,12 +169,12 @@ def set_setting(key: str, value: str) -> None:
 
 
 def auto_reply_enabled() -> bool:
-    return get_setting("auto_reply", "1") == "1"
+    return get_setting("auto_reply", "0") == "1"
 
 
 def direct_send_enabled() -> bool:
     """When on, "send X to Mom" in the dashboard goes out without a confirmation card."""
-    return get_setting("direct_send", "1") == "1"
+    return get_setting("direct_send", "0") == "1"
 
 
 # ---- message log: what people sent you and what went out (for "show me today's messages") ----

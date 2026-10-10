@@ -22,17 +22,17 @@ def test_memory_keeps_only_the_last_messages_in_order(fresh_db):
 
 
 def test_contact_modes(fresh_db):
-    assert fresh_db.get_mode("Mom") == "auto" and fresh_db.get_mode(None) == "auto"
-    fresh_db.set_mode("Mom", "hold")
-    assert fresh_db.get_mode("mom") == "hold"          # case-insensitive
+    assert fresh_db.get_mode("Mom") == "hold" and fresh_db.get_mode(None) == "hold"
     fresh_db.set_mode("Mom", "auto")
+    assert fresh_db.get_mode("mom") == "auto"          # case-insensitive
+    fresh_db.set_mode("Mom", "hold")
     assert fresh_db.all_modes() == {}
 
 
-def test_kill_switch_defaults_to_on(fresh_db):
-    assert fresh_db.auto_reply_enabled() is True
-    fresh_db.set_setting("auto_reply", "0")
+def test_kill_switch_defaults_to_off(fresh_db):
     assert fresh_db.auto_reply_enabled() is False
+    fresh_db.set_setting("auto_reply", "1")
+    assert fresh_db.auto_reply_enabled() is True
 
 
 def test_old_database_is_migrated(tmp_path, monkeypatch):
@@ -69,7 +69,7 @@ def test_message_log_time_window_and_purge(fresh_db):
     assert [m["body"] for m in fresh_db.query_messages()] == ["new"]
 
 
-def test_direct_send_defaults_to_on(fresh_db):
-    assert fresh_db.direct_send_enabled() is True
-    fresh_db.set_setting("direct_send", "0")
+def test_direct_send_defaults_to_off(fresh_db):
     assert fresh_db.direct_send_enabled() is False
+    fresh_db.set_setting("direct_send", "1")
+    assert fresh_db.direct_send_enabled() is True

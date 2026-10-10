@@ -2,11 +2,14 @@
 
 A multi-channel, human-in-the-loop personal auto-reply agent.
 
+> **Important Licensing Notice**: The MIT License in this repository applies strictly to original contributions. Files imported from the upstream prototype (listed in [`docs/PROVENANCE.md`](docs/PROVENANCE.md)) originated from an unlicensed upstream repository (`license: null`) and are **not** covered by the license grant while licensing remains unresolved.
+
 > **Core Operating Invariant**: *"Never say something I wouldn't say; hold anything uncertain for owner approval."* The system fails closed.
 
 ---
 
 ## Project Status
+
 
 - **Status**: Pre-alpha (Active Development)
 - **WhatsApp**: Working (via local Node.js bridge using `whatsapp-web.js`).

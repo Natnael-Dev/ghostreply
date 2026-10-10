@@ -19,3 +19,14 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+### Licensing Scope & Upstream Notice
+
+This MIT License applies solely to original contributions in this repository.
+Files imported from the upstream prototype repository (listed in docs/PROVENANCE.md)
+originated from an unlicensed repository (license: null). Those imported files are
+NOT covered by this MIT License grant while licensing terms remain unresolved.
+See docs/PROVENANCE.md for the complete inventory of affected files.
+

@@ -75,6 +75,18 @@ def test_contact_modes(signed_in, agent):
     assert signed_in.post("/webhook", json=msg(), headers=HEADERS).json()["action"] == "ignore"
 
 
+def test_unrecognized_stored_mode_string_holds(signed_in, agent):
+    import sqlite3
+    from app.db import DB_PATH
+    signed_in.post("/api/auto-reply", json={"enabled": True})
+    # Force an unrecognized custom mode directly into the DB to test fall-through defense
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT OR REPLACE INTO contact_modes (name, mode) VALUES ('mom', 'custom_unexpected')")
+        conn.commit()
+    r = signed_in.post("/webhook", json=msg(), headers=HEADERS).json()
+    assert r["action"] == "hold" and r["reason"] == "contact_mode"
+
+
 def test_unknown_contact_cannot_get_a_mode(signed_in):
     assert signed_in.post("/api/contact-modes", json={"name": "Nobody", "mode": "hold"}).status_code == 400
     assert signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "bogus"}).status_code == 422

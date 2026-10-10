@@ -11,12 +11,14 @@
 - [ADR-002: Userbot and Supervised Approval Bot Topology](#adr-002-userbot-and-supervised-approval-bot-topology)
 - [ADR-003: Single Python Backend Process Topology](#adr-003-single-python-backend-process-topology)
 - [ADR-004: Hold-Only Verifier and Pure Conjunction Invariant](#adr-004-hold-only-verifier-and-pure-conjunction-invariant)
-- [ADR-005: Language Policy and Amharic Staging Gate](#adr-005-language-policy-and-amharic-staging-gate)
-- [ADR-006: Text-Only Outbound Modality](#adr-006-text-only-outbound-modality)
-- [ADR-007: Repository Open-Source License Choice](#adr-007-repository-open-source-license-choice)
-- [ADR-008: Lean Operational Hardware Profile (2 vCPU / 4 GB VPS)](#adr-008-lean-operational-hardware-profile-2-vcpu--4-gb-vps)
-- [ADR-009: Local-Only Unlock and In-Memory StringSession](#adr-009-local-only-unlock-and-in-memory-stringsession)
-- [ADR-010: Baseline History Import Choice](#adr-010-baseline-history-import-choice)
+- [ADR-005: Vault KDF Decision & Blob Format Evolution](#adr-005-vault-kdf-decision--blob-format-evolution)
+- [ADR-006: Language Policy and Amharic Staging Gate](#adr-006-language-policy-and-amharic-staging-gate)
+- [ADR-007: Text-Only Outbound Modality](#adr-007-text-only-outbound-modality)
+- [ADR-008: Repository Open-Source License Choice](#adr-008-repository-open-source-license-choice)
+- [ADR-009: Lean Operational Hardware Profile (2 vCPU / 4 GB VPS)](#adr-009-lean-operational-hardware-profile-2-vcpu--4-gb-vps)
+- [ADR-010: Local-Only Unlock and In-Memory StringSession](#adr-010-local-only-unlock-and-in-memory-stringsession)
+- [ADR-011: Baseline History Import Choice](#adr-011-baseline-history-import-choice)
+- [ADR-012: Core Interface Contract Reconciliation (v0.2.0)](#adr-012-core-interface-contract-reconciliation-v020)
 
 ---
 
@@ -172,3 +174,38 @@
   2. *Adopt v0.1.1 Hardened Seams*: Mandate required safety flags on `InboundEvent`, tri-state verifier checks (`Optional[bool]` failing closed on None), async streaming inbound delivery, idempotent message claims via `InboundLedger`, scoped callback tokens with server-side hashing, immutable drafts, terminal `SHADOW_LOGGED` state, and injectable mock interfaces (`Clock`, `LLMClient`, `RateLimiter`).
 - **Decision & Rationale:**
   Adopt Option 2. Before independent feature lanes begin development, tightening contracts prevents consumer lanes from inventing uncoordinated fallbacks, ensures fail-closed semantics for unevaluated verifiers, and guarantees that audit trails and draft storage remain mathematically immutable.
+
+---
+
+## ADR-005: Vault KDF Decision & Blob Format Evolution
+
+- **Status:** UNDECIDED
+- **Reversibility:** 2-way door (pre-production cryptographic format)
+- **Context:**
+  `docs/ARCHITECTURE.md` documented Argon2id as the session vault KDF. However, the implementation in `app/vault/session_vault.py` was built with Python stdlib `hashlib.scrypt` ($N=16384, r=8, p=1, \text{salt}=32, \text{dklen}=32$) to eliminate external binary C dependencies on platforms lacking wheels.
+- **Options Considered:**
+  1. *Option A (Migrate to Argon2id)*:
+     - Use `argon2-cffi`. Standard recommended password hashing algorithm for high memory-hardness against GPU/ASIC attacks.
+     - Requires binary C extension dependency (`argon2-cffi-bindings`).
+  2. *Option B (Retain scrypt with raised parameters)*:
+     - Retain stdlib `hashlib.scrypt`.
+     - Raise cost parameters to $N=2^{17}$ ($131,072$) or $N=2^{18}$ ($262,144$), $r=8$, $p=1$ to match modern security recommendations without external C dependencies.
+- **Format Evolution (Blob Format GR2):**
+  - Current format (`GR1`): `b"GR1" + salt(32) + nonce(12) + ciphertext_and_tag`. Parameters are hardcoded in application logic.
+  - Proposed format (`GR2`): `b"GR2" + kdf_id(1 byte) + kdf_params(header bytes) + salt(32) + nonce(12) + ciphertext_and_tag`.
+  - Storing the KDF identifier and cost parameters directly in the blob header allows future parameter upgrades and seamless algorithm transitions.
+- **Decision:**
+  Undecided. Awaiting benchmarking on target 2 vCPU / 4 GB VPS profile before locking cryptographic dependencies.
+
+---
+
+## ADR-012: Core Interface Contract Reconciliation (v0.2.0)
+
+- **Status:** Accepted
+- **Reversibility:** 1-way door (Pre-consumer interface freeze)
+- **Context:**
+  Reconciliation of contracts during Phase 6.6 claims audit.
+- **Decision & Rationale:**
+  1. Explicitly document `GateDecision.decision == "AUTO_SEND"` as a reserved contract state that is never emitted until the shadow evaluation period passes.
+  2. Reaffirm the safety rule that drafts held $>30$ minutes require owner reconfirmation before dispatch.
+  3. Retain `Clock.sleep` as an asynchronous mockable primitive across system abstractions.

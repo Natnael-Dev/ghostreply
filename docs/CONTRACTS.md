@@ -1,6 +1,6 @@
-# ghostreply Core Interface Contracts (v0.1.1)
+# ghostreply Core Interface Contracts (v0.2.0)
 
-**Status:** FROZEN (Phase 1 Baseline - Revision 0.1.1, ADR-011)  
+**Status:** ACTIVE (Revision 0.2.0 - Phase 6.6 Reconciliation, ADR-012)  
 **Contract Invariant:** These interfaces define the system-wide seams across channels, safety verifiers, storage, idempotency, and lifecycle management. Any change or addition to these contracts requires an approved Architecture Decision Record (ADR).
 
 ---
@@ -201,7 +201,13 @@ class GateInput:
 
 @dataclass(frozen=True)
 class GateDecision:
-    """Decision output of the safety gate."""
+    """Decision output of the safety gate.
+    
+    SAFETY INVARIANT:
+    The gate is hold-only by design. While `AUTO_SEND` exists as a reserved contract state,
+    it is NEVER emitted under any circumstance until the shadow evaluation period passes.
+    All code paths currently evaluate to `HOLD`.
+    """
     
     decision: Literal["AUTO_SEND", "HOLD"]
     reason_codes: list[HoldReasonCode]
@@ -347,7 +353,13 @@ class SessionVault(Protocol):
 
 ```python
 class Clock(Protocol):
-    """Time abstraction for deterministic testing of timeouts, TTLs, and stale windows."""
+    """Time abstraction for deterministic testing of timeouts, TTLs, and stale windows.
+    
+    RECOMMENDATION (v0.2.0):
+    Retain Clock.sleep as an async mockable primitive. In production, it wraps asyncio.sleep.
+    In testing and simulation, a mock clock can advance time instantly without wall-clock latency,
+    which is essential for deterministic verification of retry delays, backoff, and timeouts.
+    """
     
     def now_utc(self) -> datetime: ...
     async def sleep(self, seconds: float) -> None: ...

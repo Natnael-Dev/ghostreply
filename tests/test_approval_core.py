@@ -111,3 +111,12 @@ async def test_draft_repository_immutability_and_state(tmp_path: Path):
         1, DraftState.HELD, DraftState.APPROVED
     )
     assert dup_transition is False
+
+
+@pytest.mark.xfail(strict=True, reason="Enforced in Phase 7: draft age over 30m requires reconfirmation")
+def test_draft_age_over_30m_requires_reconfirmation():
+    """Safety rule: Held draft older than 30m requires reconfirmation and cannot transition directly to APPROVED."""
+    from datetime import timedelta
+    created_at = datetime.now(timezone.utc) - timedelta(minutes=35)
+    # When Phase 7 enforces age-based reconfirmation:
+    validate_transition(DraftState.HELD, DraftState.APPROVED, created_at=created_at)

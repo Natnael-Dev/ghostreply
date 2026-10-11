@@ -2,8 +2,6 @@
 import base64
 import io
 
-from PIL import Image
-
 _processor = None
 _model = None
 
@@ -20,6 +18,8 @@ def _load():
 
 
 def caption_base64_image(media_base64: str) -> str:
+    from PIL import Image
+
     _load()
     image = Image.open(io.BytesIO(base64.b64decode(media_base64))).convert("RGB")
     inputs = _processor(image, return_tensors="pt")

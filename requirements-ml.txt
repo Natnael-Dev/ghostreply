@@ -1,0 +1,8 @@
+# WARNING: OPTIONAL, UNSUPPORTED AND NOT RECOMMENDED FOR v0.1
+# The packages pinned below contain known upstream security vulnerabilities.
+# They are quarantined from the default production runtime.
+# Do NOT install in base deployments unless local GPU/CPU ML inference is explicitly required.
+
+faster-whisper==1.0.3
+transformers==4.44.2
+torch==2.4.1

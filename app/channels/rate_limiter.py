@@ -4,7 +4,7 @@ from pathlib import Path
 import sqlite3
 from typing import Optional, Protocol
 
-from app.gate.prefilter import Clock, SystemClock
+from app.contracts.clock import Clock, SystemClock
 
 DEFAULT_RATE_DB_PATH = (
     Path(__file__).resolve().parent.parent.parent / "data" / "rate_limits.db"

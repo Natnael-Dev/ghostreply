@@ -1,11 +1,7 @@
-from __future__ import annotations
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
-if TYPE_CHECKING:
-    from app.approvals.repository import SqliteDraftRepository
-
-from app.approvals.state import DraftState
+from app.contracts.drafts import DraftRepository, DraftState
 from app.channels.base import ChannelAdapter
 from app.channels.rate_limiter import RateLimiter
 
@@ -25,7 +21,7 @@ async def dispatch_with_rechecks(
     chat_id: str,
     text: str,
     adapter: ChannelAdapter,
-    draft_repo: SqliteDraftRepository,
+    draft_repo: DraftRepository,
     rate_limiter: Optional[RateLimiter] = None,
     kill_switch_active: bool = False,
     shadow_mode: bool = False,
@@ -71,7 +67,7 @@ async def _execute_transmission(
     chat_id: str,
     text: str,
     adapter: ChannelAdapter,
-    draft_repo: SqliteDraftRepository,
+    draft_repo: DraftRepository,
     rate_limiter: Optional[RateLimiter],
 ) -> DispatchResult:
     try:

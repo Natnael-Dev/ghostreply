@@ -1,0 +1,6 @@
+# Optional heavy ML packages (speech-to-text, vision/image captioning)
+# Install only if running local inference on GPU/CPU: pip install -r requirements-ml.txt
+
+faster-whisper==1.0.3
+transformers==4.44.2
+torch==2.4.1

@@ -93,6 +93,6 @@ class DraftRepository(Protocol):
         ...
 
     async def transition_state(
-        self, draft_id: int, expected: DraftState, target: DraftState
+        self, draft_id: int, expected_state: DraftState, new_state: DraftState
     ) -> bool:
         ...

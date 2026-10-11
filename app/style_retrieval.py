@@ -8,8 +8,6 @@ import json
 import os
 from pathlib import Path
 
-import numpy as np
-
 INDEX_DIR = Path(__file__).resolve().parent.parent / "data" / "style_index"
 
 _pairs: list[dict] | None = None
@@ -30,6 +28,7 @@ def _load() -> bool:
         _pairs = []
         return False
     from sentence_transformers import SentenceTransformer
+    import numpy as np
 
     _pairs = json.loads(pairs_file.read_text(encoding="utf-8"))
     _vectors = np.load(vectors_file)
@@ -40,6 +39,7 @@ def _load() -> bool:
 def retrieve_examples(text: str, k: int = 5) -> list[dict]:
     if os.getenv("STYLE_RETRIEVAL", "true").lower() != "true" or not text.strip() or not _load():
         return []
+    import numpy as np
     query = _embedder.encode([f"query: {text}"], normalize_embeddings=True)[0]
     best = np.argsort(_vectors @ query)[::-1][:k]
     return [_pairs[i] for i in best]

@@ -33,9 +33,9 @@ def get_schema_fingerprint(conn: sqlite3.Connection) -> dict:
         }
 
     triggers = [
-        (r[0], r[1])
+        (r[0], r[1], " ".join((r[2] or "").split()))
         for r in conn.execute(
-            "SELECT name, tbl_name FROM sqlite_master WHERE type='trigger' ORDER BY name"
+            "SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name"
         ).fetchall()
     ]
     return {"schema": schema, "triggers": triggers}
@@ -94,9 +94,11 @@ def test_migrations_parity_fresh_vs_upgraded(tmp_path: Path):
 def test_migrations_idempotency_and_double_run(tmp_path: Path):
     db_path = tmp_path / "idempotent.db"
     applied_first = run_migrations(db_path)
-    assert len(applied_first) >= 2
+    assert len(applied_first) >= 4
     assert "000_baseline_schema.sql" in applied_first
-    assert "001_add_held_reason_and_number.sql" in applied_first
+    assert "001_inbound_ledger.sql" in applied_first
+    assert "002_audit_log_triggers.sql" in applied_first
+    assert "003_add_held_reason_and_number.sql" in applied_first
 
     # Second run should apply 0 migrations and make no backups
     backups_before = list(tmp_path.glob("*.bak"))
@@ -115,4 +117,36 @@ def test_schema_migrations_table_tracking(tmp_path: Path):
     conn.close()
 
     assert "000_baseline_schema.sql" in applied
-    assert "001_add_held_reason_and_number.sql" in applied
+    assert "001_inbound_ledger.sql" in applied
+    assert "002_audit_log_triggers.sql" in applied
+    assert "003_add_held_reason_and_number.sql" in applied
+
+
+def test_failclosed_clamp_runs_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Legacy DB with auto_reply=1 is clamped once; owner re-enables it; a second init keeps it."""
+    db_file = tmp_path / "legacy_clamp.db"
+    monkeypatch.setattr(db, "DB_PATH", db_file)
+
+    # 1. Simulate legacy DB before failclosed clamp, with auto_reply='1'
+    conn = sqlite3.connect(db_file)
+    conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("INSERT INTO settings (key, value) VALUES ('auto_reply', '1')")
+    conn.execute("INSERT INTO settings (key, value) VALUES ('direct_send', '1')")
+    conn.commit()
+    conn.close()
+
+    # First init(): migrations run, then fail-closed clamp runs
+    db.init()
+
+    # auto_reply and direct_send clamped to '0'
+    assert db.get_setting("auto_reply") == "0"
+    assert db.get_setting("direct_send") == "0"
+    assert db.get_setting(db.FAILCLOSED_MARKER) == "1"
+
+    # Owner re-enables auto_reply
+    db.set_setting("auto_reply", "1")
+    assert db.get_setting("auto_reply") == "1"
+
+    # Second init(): marker is present, clamp must NOT overwrite owner choice
+    db.init()
+    assert db.get_setting("auto_reply") == "1"

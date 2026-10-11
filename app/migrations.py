@@ -38,6 +38,34 @@ def get_applied_migrations(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in rows}
 
 
+import re
+
+ALTER_COLUMN_PATTERN = re.compile(
+    r"^\s*ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)\s+",
+    re.IGNORECASE,
+)
+
+
+def _apply_migration_sql(conn: sqlite3.Connection, sql_content: str) -> None:
+    lines = sql_content.splitlines()
+    has_alter = any(ALTER_COLUMN_PATTERN.match(line.strip()) for line in lines)
+    if not has_alter:
+        conn.executescript(sql_content)
+        return
+
+    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+    for stmt in statements:
+        match = ALTER_COLUMN_PATTERN.match(stmt)
+        if match:
+            table, column = match.group(1), match.group(2)
+            existing_cols = {
+                r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if column in existing_cols:
+                continue
+        conn.execute(stmt)
+
+
 def run_migrations(db_path: Path, migrations_dir: Path | None = None) -> list[str]:
     """Apply all pending SQL migrations forward-only in lexical order.
     
@@ -74,7 +102,7 @@ def run_migrations(db_path: Path, migrations_dir: Path | None = None) -> list[st
         for sql_file in pending:
             sql_content = sql_file.read_text(encoding="utf-8")
             with conn:
-                conn.executescript(sql_content)
+                _apply_migration_sql(conn, sql_content)
                 now_ts = datetime.now(timezone.utc).timestamp()
                 conn.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",

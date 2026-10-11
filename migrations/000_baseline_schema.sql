@@ -17,18 +17,6 @@ CREATE TABLE IF NOT EXISTS audit (
     target TEXT
 );
 
-CREATE TRIGGER IF NOT EXISTS trg_audit_no_update
-BEFORE UPDATE ON audit
-BEGIN
-    SELECT RAISE(FAIL, 'Audit log is append-only');
-END;
-
-CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete
-BEFORE DELETE ON audit
-BEGIN
-    SELECT RAISE(FAIL, 'Audit log is append-only');
-END;
-
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL,

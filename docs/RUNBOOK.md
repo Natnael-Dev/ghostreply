@@ -28,14 +28,14 @@ To stop all background services immediately:
    cp .env.example .env
    ```
 2. Configure mandatory parameters:
-   - `DASHBOARD_PASSWORD`: Strong master passphrase for UI access.
+   - `DASHBOARD_PASSWORD`: Master passphrase for UI access.
    - `OPENAI_API_KEY`: API credential for agent completions.
    - `BRIDGE_SECRET`: Shared secret for WhatsApp Node bridge communication.
 3. Database initialization:
    ```bash
    python -c "from app import db; db.init()"
    ```
-   This automatically runs all pending forward migrations in `migrations/` and verifies audit triggers.
+   This automatically runs all pending forward migrations in `migrations/`, executes the one-time failclosed clamp (`failclosed_v1`), and verifies audit triggers.
 
 ---
 
@@ -56,10 +56,10 @@ To stop all background services immediately:
 
 ## 4. Secret Vault Operations
 
-- The session vault (`app/security/vault.py`) protects Telegram MTProto session strings and cryptographic keys.
-- **Unlock Vault**: Vaults require password-derived key derivation at boot.
+- The session vault (`app/security/vault.py`) protects cryptographic keys and sensitive credentials.
+- **Key Derivation**: Uses Python stdlib `hashlib.scrypt` ($N=16384, r=8, p=1$) + AES-256-GCM (blob header `GR1`).
 - Keys are kept strictly in-memory and are never written to disk or logs.
-- If a session is corrupted, re-authenticate via the interactive Telethon prompt.
+- Unlock is local-only (`127.0.0.1`). Lockout engages after 5 failed attempts for 15 minutes.
 
 ---
 

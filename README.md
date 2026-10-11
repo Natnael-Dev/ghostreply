@@ -8,34 +8,26 @@ A multi-channel, human-in-the-loop personal auto-reply agent.
 
 ---
 
-## Project Status
+## What It Is
 
-
-- **Status**: Pre-alpha (Active Development)
-- **WhatsApp**: Working (via local Node.js bridge using `whatsapp-web.js`).
-- **Telegram**: In progress (Telethon MTProto userbot + supervised Approval Bot).
+`ghostreply` is an agentic assistant designed to triage incoming personal messages, retrieve grounding facts from owner-provided knowledge files, synthesize polite reply drafts, and require human approval before any outbound transmission.
 
 ---
 
-## ⚠️ Unofficial Client Risk Warning
+## Status and Honest Limits
 
-**Important Notice**: `ghostreply` operates via unofficial client mechanisms:
-1. **WhatsApp**: Uses `whatsapp-web.js` running headless Chromium locally.
-2. **Telegram**: Uses an MTProto userbot (`Telethon`) connecting to personal account credentials.
-
-Both mechanisms are **unofficial third-party clients** and violate WhatsApp and Telegram terms of service for automated activity. Utilizing automated replies on personal accounts carries a real risk of account restriction, temporary suspension, or permanent ban. This project is designed strictly as a personal, single-owner research tool with strict rate-limiting, human-like delays, and fail-closed human approval gates.
-
----
-
-## Key Principles & Design
-
-- **Fail-Closed Conjunction**: Autonomous sends occur if and only if all conditions in the safety gate evaluate to true. If any check fails, the reply is held.
-- **Hold-Only Verifier**: Automated checks can only force a `HOLD`; no check can ever override a `HOLD`. Only explicit owner action can approve a draft.
-- **Auditability**: All state transitions produce append-only audit records.
-- **In-Memory Sessions**: MTProto credentials are decrypted into memory at runtime and encrypted at rest with Argon2id + AES-256-GCM. Session unlock is local-only.
+- **Status**: Pre-alpha (Active architectural refactoring).
+- **Target Mode**: Draft-and-approve. Automated replies are never dispatched autonomously without human review (`AUTO_SEND` is a reserved state and is never emitted).
+- **WhatsApp Support**: Operates via an unofficial local bridge (`whatsapp-web.js` on Node.js communicating over localhost with FastAPI).
+- **Ban Risk Warning**: Using automated or scripted interaction on WhatsApp via unofficial client libraries carries an inherent risk of account suspension or permanent bans by WhatsApp / Meta.
+- **No Telegram Code**: While architectural plans (ADR-001, ADR-002) describe a future Telegram userbot and approval bot topology, **no Telegram integration code exists in this repository**.
 
 ---
 
-## Attribution & Provenance
+## Security & Fail-Closed Defaults
 
-`ghostreply` originates from an open-source WhatsApp assistant agent prototype built with a Node bridge, Python FastAPI, LangGraph, and a vanilla-JS dashboard. Architectural concepts and foundational baseline code are derived from that original prototype with full authorization and ownership continuity.
+- **Fail-Closed Defaults**: Initial database defaults set `auto_reply="0"`, `direct_send="0"`, and `contact_mode="hold"`. Unknown contact modes fall through strictly to hold.
+- **One-Time Failclosed Clamp**: At startup, `app.db.init()` inspects `settings` for `failclosed_v1`. If absent, it clamps `auto_reply` and `direct_send` to `"0"`, records the marker, and prevents accidental sends on upgraded legacy databases.
+- **Global Kill Switch**: Setting `auto_reply='0'` or `direct_send='0'` (via CLI or dashboard) causes `dispatch_with_rechecks()` to immediately abort and transition approved drafts back to `HELD`.
+- **Append-Only Auditing**: SQLite database triggers (`trg_audit_no_update`, `trg_audit_no_delete`) block all modifications and deletions on the audit log.
+- **Session Vault**: Secrets and tokens are encrypted at rest using `hashlib.scrypt` ($N=2^{14}, r=8, p=1$) + AES-256-GCM. Unlocked secrets remain in memory only.

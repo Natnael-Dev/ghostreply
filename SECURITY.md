@@ -27,5 +27,5 @@ You will receive an initial response within 48 hours.
 - **Fail-Closed by Default**: Direct sending and automated replies are disabled by default. Unknown contact modes fall through to `HOLD`.
 - **Zero Production Sends Without Owner Approval**: In the current version, `AUTO_SEND` is never emitted. All drafts require explicit human authorization.
 - **Append-Only Auditing**: SQLite database triggers block all updates and deletions on audit tables.
-- **Local-Only Credential Vault**: MTProto session strings and cryptographic keys are encrypted at rest with Argon2id and AES-256-GCM. Decrypted secrets are kept in memory only and never serialized or logged.
+- **Local-Only Credential Vault**: Cryptographic keys and credentials are encrypted at rest with scrypt ($N=16384, r=8, p=1$) and AES-256-GCM. Decrypted secrets are kept in memory only and never serialized or logged.
 - **Redaction**: All logging pipelines anonymize personal identifiable information (PII) including phone numbers and message content.

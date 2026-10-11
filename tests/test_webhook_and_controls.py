@@ -26,15 +26,16 @@ def test_webhook_needs_the_bridge_token(client, agent):
     assert client.post("/webhook", json=msg(), headers={"x-bridge-token": "wrong"}).status_code == 401
 
 
-def test_normal_message_is_sent(client, agent):
+def test_normal_message_is_held_by_default(client, agent):
     r = client.post("/webhook", json=msg(), headers=HEADERS).json()
-    assert r["action"] == "send" and r["reply_text"] == "اه ماشي"
+    assert r["action"] == "hold" and r["reason"] == "paused"
 
 
 def test_allowlist_uses_the_number_resolved_by_the_bridge(client, agent, monkeypatch):
     monkeypatch.setenv("ALLOWED_CONTACTS", "+15550100000")
     lid = msg(**{"from": "000000000000001@lid"})
-    assert client.post("/webhook", json=lid, headers=HEADERS).json()["action"] == "send"
+    # Allowed contacts are accepted into pipeline (held under default fail-closed kill switch)
+    assert client.post("/webhook", json=lid, headers=HEADERS).json()["action"] == "hold"
     stranger = msg(**{"from": "5@lid", "number": "+15550100001"})
     assert client.post("/webhook", json=stranger, headers=HEADERS).json()["action"] == "ignore"
 
@@ -51,19 +52,39 @@ def test_agent_hold_is_queued_with_name_and_reason(signed_in, agent):
 
 
 def test_kill_switch_holds_everything(signed_in, agent):
+    # Defaults to auto_reply=False
+    assert signed_in.get("/api/status").json()["auto_reply"] is False
+    r = signed_in.post("/webhook", json=msg(), headers=HEADERS).json()
+    assert r["action"] == "hold" and r["reason"] == "paused"
+    # When enabled and contact mode set to auto, sends
+    signed_in.post("/api/auto-reply", json={"enabled": True})
+    signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "auto"})
+    assert signed_in.post("/webhook", json=msg(), headers=HEADERS).json()["action"] == "send"
+    # When disabled again, holds with paused
     assert signed_in.post("/api/auto-reply", json={"enabled": False}).json()["auto_reply"] is False
     r = signed_in.post("/webhook", json=msg(), headers=HEADERS).json()
     assert r["action"] == "hold" and r["reason"] == "paused"
-    signed_in.post("/api/auto-reply", json={"enabled": True})
-    assert signed_in.post("/webhook", json=msg(), headers=HEADERS).json()["action"] == "send"
 
 
 def test_contact_modes(signed_in, agent):
+    signed_in.post("/api/auto-reply", json={"enabled": True})
     assert signed_in.post("/api/contact-modes", json={"name": "mom", "mode": "hold"}).json()["name"] == "Mom"
     r = signed_in.post("/webhook", json=msg(), headers=HEADERS).json()
     assert r["action"] == "hold" and r["reason"] == "contact_mode"
     signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "ignore"})
     assert signed_in.post("/webhook", json=msg(), headers=HEADERS).json()["action"] == "ignore"
+
+
+def test_unrecognized_stored_mode_string_holds(signed_in, agent):
+    import sqlite3
+    from app.db import DB_PATH
+    signed_in.post("/api/auto-reply", json={"enabled": True})
+    # Force an unrecognized custom mode directly into the DB to test fall-through defense
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT OR REPLACE INTO contact_modes (name, mode) VALUES ('mom', 'custom_unexpected')")
+        conn.commit()
+    r = signed_in.post("/webhook", json=msg(), headers=HEADERS).json()
+    assert r["action"] == "hold" and r["reason"] == "contact_mode"
 
 
 def test_unknown_contact_cannot_get_a_mode(signed_in):
@@ -72,12 +93,16 @@ def test_unknown_contact_cannot_get_a_mode(signed_in):
 
 
 def test_activity_feed_resolves_names(signed_in, agent):
+    signed_in.post("/api/auto-reply", json={"enabled": True})
+    signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "auto"})
     signed_in.post("/webhook", json=msg(), headers=HEADERS)
     first = signed_in.get("/api/audit").json()["items"][0]
     assert first["kind"] == "auto_reply" and first["name"] == "Mom"
 
 
 def test_messages_endpoint_lists_both_directions(signed_in, agent):
+    signed_in.post("/api/auto-reply", json={"enabled": True})
+    signed_in.post("/api/contact-modes", json={"name": "Mom", "mode": "auto"})
     signed_in.post("/webhook", json=msg(body="هتيجي؟"), headers=HEADERS)
     items = signed_in.get("/api/messages?range=today").json()["items"]
     assert [(m["direction"], m["name"]) for m in items] == [("out", "Mom"), ("in", "Mom")]
@@ -94,6 +119,6 @@ def test_held_messages_are_logged_as_incoming_only(signed_in, agent):
 
 
 def test_direct_send_switch(signed_in):
-    assert signed_in.get("/api/status").json()["direct_send"] is True
-    assert signed_in.post("/api/direct-send", json={"enabled": False}).json()["direct_send"] is False
+    assert signed_in.get("/api/status").json()["direct_send"] is False
     assert signed_in.post("/api/direct-send", json={"enabled": True}).json()["direct_send"] is True
+    assert signed_in.post("/api/direct-send", json={"enabled": False}).json()["direct_send"] is False

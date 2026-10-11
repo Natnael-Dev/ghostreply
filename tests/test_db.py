@@ -22,17 +22,17 @@ def test_memory_keeps_only_the_last_messages_in_order(fresh_db):
 
 
 def test_contact_modes(fresh_db):
-    assert fresh_db.get_mode("Mom") == "auto" and fresh_db.get_mode(None) == "auto"
-    fresh_db.set_mode("Mom", "hold")
-    assert fresh_db.get_mode("mom") == "hold"          # case-insensitive
+    assert fresh_db.get_mode("Mom") == "hold" and fresh_db.get_mode(None) == "hold"
     fresh_db.set_mode("Mom", "auto")
+    assert fresh_db.get_mode("mom") == "auto"          # case-insensitive
+    fresh_db.set_mode("Mom", "hold")
     assert fresh_db.all_modes() == {}
 
 
-def test_kill_switch_defaults_to_on(fresh_db):
-    assert fresh_db.auto_reply_enabled() is True
-    fresh_db.set_setting("auto_reply", "0")
+def test_kill_switch_defaults_to_off(fresh_db):
     assert fresh_db.auto_reply_enabled() is False
+    fresh_db.set_setting("auto_reply", "1")
+    assert fresh_db.auto_reply_enabled() is True
 
 
 def test_old_database_is_migrated(tmp_path, monkeypatch):
@@ -69,7 +69,41 @@ def test_message_log_time_window_and_purge(fresh_db):
     assert [m["body"] for m in fresh_db.query_messages()] == ["new"]
 
 
-def test_direct_send_defaults_to_on(fresh_db):
-    assert fresh_db.direct_send_enabled() is True
-    fresh_db.set_setting("direct_send", "0")
+def test_direct_send_defaults_to_off(fresh_db):
     assert fresh_db.direct_send_enabled() is False
+    fresh_db.set_setting("direct_send", "1")
+    assert fresh_db.direct_send_enabled() is True
+
+
+def test_failclosed_v1_clamp_behavior(tmp_path, monkeypatch, capsys):
+    import sqlite3
+    from app import db
+
+    db_file = tmp_path / "clamp_test.db"
+    monkeypatch.setattr(db, "DB_PATH", db_file)
+
+    # (a) A pre-seeded DB with auto_reply=1 and direct_send=1 reads 0 after init
+    with sqlite3.connect(db_file) as conn:
+        conn.execute("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("INSERT INTO settings (key, value) VALUES ('auto_reply', '1'), ('direct_send', '1')")
+        conn.commit()
+
+    db.init()
+    out = capsys.readouterr().out
+    assert "[Security] Clamped auto_reply and direct_send to fail-closed defaults" in out
+    assert db.auto_reply_enabled() is False
+    assert db.direct_send_enabled() is False
+    assert db.get_setting("failclosed_v1") == "1"
+
+    # (b) The owner then sets auto_reply=1 and a second init keeps 1
+    db.set_setting("auto_reply", "1")
+    db.init()
+    assert db.auto_reply_enabled() is True
+
+    # (c) A fresh DB gets the marker and defaults
+    fresh_file = tmp_path / "fresh_clamp.db"
+    monkeypatch.setattr(db, "DB_PATH", fresh_file)
+    db.init()
+    assert db.auto_reply_enabled() is False
+    assert db.direct_send_enabled() is False
+    assert db.get_setting("failclosed_v1") == "1"

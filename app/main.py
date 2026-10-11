@@ -90,8 +90,8 @@ async def webhook(msg: IncomingMessage, x_bridge_token: str = Header(default="")
     action, reason = result["action"], result.get("hold_reason", "")
     if action == "send" and not db.auto_reply_enabled():
         action, reason = "hold", "paused"          # global kill switch
-    elif action == "send" and mode == "hold":
-        action, reason = "hold", "contact_mode"    # this contact is always approved by hand
+    elif action == "send" and mode != "auto":
+        action, reason = "hold", "contact_mode"    # any non-auto contact mode fails closed to hold
 
     if action == "hold":
         db.add_held(msg.from_, result["resolved_text"], result["reply_text"], reason=reason, number=msg.number)

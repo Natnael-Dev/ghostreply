@@ -133,3 +133,25 @@ def test_operational_flags_triggers():
     assert (
         HoldReasonCode.CONTACT_MODE_ASK_OR_IGNORE in dec_contact.reason_codes
     )
+
+
+def test_gate_never_returns_auto_send():
+    """Safety rule: AUTO_SEND is reserved and must NEVER be emitted by any code path."""
+    # Test across ideal pass conditions
+    inp = make_gate_input(
+        contact_mode="auto_send",
+        detected_language="en",
+        language_confidence=1.0,
+        has_geez_chars=False,
+        quoted_claims_verified=True,
+        entailment_verified=True,
+        entailment_commits_or_agrees=False,
+        is_claim_free_allowlisted=True,
+        needs_owner=False,
+        kill_switch_active=False,
+        shadow_mode_active=False,
+        rate_limits_clear=True,
+    )
+    decision = evaluate_safety_gate(inp)
+    assert decision.decision != "AUTO_SEND"
+    assert decision.decision == "HOLD"

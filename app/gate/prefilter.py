@@ -3,8 +3,9 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, Protocol
 
-from app.channels.events import InboundEvent
-from app.gate.models import HoldReasonCode
+from app.contracts.clock import Clock, SystemClock
+from app.contracts.events import InboundEvent
+from app.contracts.gate import HoldReasonCode
 
 STALE_THRESHOLD_SECONDS = 300.0  # 5 minutes
 
@@ -21,19 +22,15 @@ PROMISE_PATTERN = re.compile(
     r"\bcount on me\b|\bi swear\b)"
 )
 
-
-class Clock(Protocol):
-    """Injectable time provider for deterministic testing."""
-
-    def now_utc(self) -> datetime:
-        ...
-
-
-class SystemClock:
-    """Standard system clock returning UTC datetime."""
-
-    def now_utc(self) -> datetime:
-        return datetime.now(timezone.utc)
+__all__ = [
+    "Clock",
+    "SystemClock",
+    "STALE_THRESHOLD_SECONDS",
+    "FINANCIAL_PATTERN",
+    "RSVP_PATTERN",
+    "PROMISE_PATTERN",
+    "evaluate_prefilters",
+]
 
 
 def evaluate_prefilters(

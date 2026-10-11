@@ -24,10 +24,13 @@ A multi-channel, human-in-the-loop personal auto-reply agent.
 
 ---
 
-## Security & Fail-Closed Defaults
+## Security & Kill Switch Mechanics
 
-- **Fail-Closed Defaults**: Initial database defaults set `auto_reply="0"`, `direct_send="0"`, and `contact_mode="hold"`. Unknown contact modes fall through strictly to hold.
-- **One-Time Failclosed Clamp**: At startup, `app.db.init()` inspects `settings` for `failclosed_v1`. If absent, it clamps `auto_reply` and `direct_send` to `"0"`, records the marker, and prevents accidental sends on upgraded legacy databases.
-- **Global Kill Switch**: Setting `auto_reply='0'` or `direct_send='0'` (via CLI or dashboard) causes `dispatch_with_rechecks()` to immediately abort and transition approved drafts back to `HELD`.
+- **Fail-Closed Defaults**: Initial database defaults set `auto_reply="0"` and `direct_send="0"` (`app/db.py:61-64`). Unknown contact modes fall through strictly to hold (`app/contacts.py:27`).
+- **One-Time Failclosed Clamp**: At startup, `app.db.init()` inspects `settings` for `failclosed_v1`. If absent, it clamps `auto_reply` and `direct_send` to `"0"`, records the marker, and prevents accidental sends on upgraded legacy databases (`app/db.py:64`).
+- **Kill Switch Behavior (v0.1)**:
+  - In `app/main.py:91-92`, the webhook checks `db.auto_reply_enabled()`. When disabled, replies are held with reason `"paused"`.
+  - In `app/assistant.py:160`, `db.direct_send_enabled()` controls whether owner commands sent via dashboard execute directly or show a confirmation card.
+  - `dispatch_with_rechecks()` in `app/channels/dispatcher.py:30` defines a `kill_switch_active` parameter, but **this parameter is NOT wired into the live path until Phase 7.1**.
 - **Append-Only Auditing**: SQLite database triggers (`trg_audit_no_update`, `trg_audit_no_delete`) block all modifications and deletions on the audit log.
-- **Session Vault**: Secrets and tokens are encrypted at rest using `hashlib.scrypt` ($N=2^{14}, r=8, p=1$) + AES-256-GCM. Unlocked secrets remain in memory only.
+- **Session Vault**: Secrets and tokens are encrypted at rest using `hashlib.scrypt` ($N=2^{14}, r=8, p=1$) + AES-256-GCM (`app/session_vault.py:14-25`). Unlocked secrets remain in memory only.

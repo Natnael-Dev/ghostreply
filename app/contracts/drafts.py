@@ -54,7 +54,7 @@ VALID_TRANSITIONS: dict[DraftState, set[DraftState]] = {
 }
 
 
-def validate_transition(current: DraftState, target: DraftState, created_at: Optional[datetime] = None) -> bool:
+def validate_transition(current: DraftState, target: DraftState) -> bool:
     """Validate whether transitioning from current to target is allowed."""
     allowed = VALID_TRANSITIONS.get(current, set())
     if target not in allowed:

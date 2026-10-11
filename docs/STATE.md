@@ -1,7 +1,7 @@
 # GhostReply System State
 
 **Current Branch:** `ghostreply/phase-6.6`  
-**Base Commit:** `7fbfb78492686282724e6838c087679cbdb3dc6a` (matches `origin/main`)  
+**Base Commit:** `7fbfb78` (matches `origin/main`)  
 **Verified Test Suite:** 150 passed (offline, Python 3.13.15, pytest 9.1.1)
 
 ---

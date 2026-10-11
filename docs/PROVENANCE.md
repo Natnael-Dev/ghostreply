@@ -2,14 +2,14 @@
 
 **Document Status:** Fact-Checked Baseline Audit  
 **Audit Date:** 2026-10-10  
-**Target Repository:** `ghostreply` (`7fbfb78492686282724e6838c087679cbdb3dc6a`)
+**Target Repository:** `ghostreply` (`7fbfb78`)
 
 ---
 
 ## 1. Upstream Source Repository
 
 - **Source URL:** `https://github.com/Shahd132/Whatsapp-Assistant-Agent.git`
-- **Initial Baseline Commit:** `29a36920253457a4192ddbbf61c33f2a74c76b91` ("import baseline from the original whatsapp repo")
+- **Initial Baseline Commit:** `29a3692` ("import baseline from the original whatsapp repo")
 - **Upstream License:** `null` (The upstream repository contains no license file, and the GitHub API returns `license: null`).
 - **Legal Status:** The licensing question is open. In the absence of an upstream open-source license grant, code provenance must be strictly tracked, and imported components must be cleanly decoupled or replaced.
 

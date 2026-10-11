@@ -46,16 +46,38 @@ ALTER_COLUMN_PATTERN = re.compile(
 )
 
 
-def _apply_migration_sql(conn: sqlite3.Connection, sql_content: str) -> None:
-    lines = sql_content.splitlines()
-    has_alter = any(ALTER_COLUMN_PATTERN.match(line.strip()) for line in lines)
-    if not has_alter:
-        conn.executescript(sql_content)
-        return
+def _strip_comments(sql: str) -> str:
+    """Remove SQL block and line comments."""
+    sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
+    lines = [re.sub(r"--.*$", "", line) for line in sql.splitlines()]
+    return "\n".join(lines).strip()
 
-    statements = [s.strip() for s in sql_content.split(";") if s.strip()]
+
+def _split_statements(sql: str) -> list[str]:
+    """Split SQL script into complete statements using sqlite3.complete_statement."""
+    statements: list[str] = []
+    buf: list[str] = []
+    for line in sql.splitlines(keepends=True):
+        buf.append(line)
+        candidate = "".join(buf)
+        if sqlite3.complete_statement(candidate):
+            stmt = candidate.strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+    rem = "".join(buf).strip()
+    if rem:
+        statements.append(rem)
+    return statements
+
+
+def _apply_migration_sql(conn: sqlite3.Connection, sql_content: str) -> None:
+    statements = _split_statements(sql_content)
     for stmt in statements:
-        match = ALTER_COLUMN_PATTERN.match(stmt)
+        cleaned = _strip_comments(stmt)
+        if not cleaned:
+            continue
+        match = ALTER_COLUMN_PATTERN.match(cleaned)
         if match:
             table, column = match.group(1), match.group(2)
             existing_cols = {

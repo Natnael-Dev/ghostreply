@@ -1,40 +1,25 @@
-"""Immutable draft repository and storage contracts."""
+"""Immutable draft repository implementation."""
 import json
 import sqlite3
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from app.approvals.state import DraftState, validate_transition
-from app.channels.events import ChannelType
-from app.gate.prefilter import Clock, SystemClock
+from app.contracts.clock import Clock, SystemClock
+from app.contracts.drafts import (
+    DraftRecord,
+    DraftRepository,
+    DraftState,
+    validate_transition,
+)
+from app.contracts.events import ChannelType
 
 DEFAULT_DB_PATH = (
     Path(__file__).resolve().parent.parent.parent / "data" / "assistant.db"
 )
 
 
-@dataclass(frozen=True)
-class DraftRecord:
-    """Immutable representation of a held reply draft."""
-
-    draft_id: int
-    channel: ChannelType
-    sender_id: str
-    chat_id: str
-    inbound_message_id: str
-    inbound_text: Optional[str]
-    draft_text: str
-    status: DraftState
-    token_hash: str
-    draft_hash: str
-    reason_codes: list[str]
-    created_at: datetime
-    updated_at: datetime
-
-
-class SqliteDraftRepository:
+class SqliteDraftRepository(DraftRepository):
     """SQLite-backed immutable repository for held drafts."""
 
     def __init__(

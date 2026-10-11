@@ -32,40 +32,17 @@ FAILCLOSED_MARKER = "failclosed_v1"
 
 
 def init() -> None:
+    from app.migrations import run_migrations
+
+    run_migrations(DB_PATH)
+    # One-time fail-closed clamp for existing and fresh databases
     with _db() as c:
-        c.execute("""CREATE TABLE IF NOT EXISTS held (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, chat_id TEXT,
-            incoming TEXT, reply TEXT, status TEXT DEFAULT 'pending')""")
-        _add_column(c, "held", "reason", "TEXT DEFAULT ''")
-        _add_column(c, "held", "number", "TEXT DEFAULT ''")
-        c.execute("""CREATE TABLE IF NOT EXISTS audit (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, kind TEXT, target TEXT)""")
-        c.execute("""CREATE TRIGGER IF NOT EXISTS trg_audit_no_update
-            BEFORE UPDATE ON audit
-            BEGIN
-                SELECT RAISE(FAIL, 'Audit log is append-only');
-            END;""")
-        c.execute("""CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete
-            BEFORE DELETE ON audit
-            BEGIN
-                SELECT RAISE(FAIL, 'Audit log is append-only');
-            END;""")
-        c.execute("""CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, chat_id TEXT, role TEXT, content TEXT)""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages (chat_id, id)")
-        c.execute("CREATE TABLE IF NOT EXISTS contact_modes (name TEXT PRIMARY KEY, mode TEXT NOT NULL)")
-        c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        # One-time fail-closed clamp for existing and fresh databases
         marker = c.execute("SELECT value FROM settings WHERE key = ?", (FAILCLOSED_MARKER,)).fetchone()
         if not marker:
             c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_reply', '0')")
             c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('direct_send', '0')")
             c.execute("INSERT INTO settings (key, value) VALUES (?, '1')", (FAILCLOSED_MARKER,))
             print(f"[Security] Clamped auto_reply and direct_send to fail-closed defaults ({FAILCLOSED_MARKER})")
-        c.execute("""CREATE TABLE IF NOT EXISTS message_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, chat_id TEXT, name TEXT,
-            direction TEXT, body TEXT, outcome TEXT)""")
-        c.execute("CREATE INDEX IF NOT EXISTS idx_message_log_ts ON message_log (ts)")
     purge_messages()
 
 
